@@ -69,7 +69,7 @@ Text-to-Speech-Application/
 │   │   └── routes/                 # health, voices, tts, auth, history, favorites, audio
 │   ├── scripts/fetch-piper-models.sh # one-time download of the 9 neural voice models (~560 MB)
 │   │   ├── .cache/piper-models/      # the .onnx models + configs — git-ignored
-│   └── tests/                      # Vitest + Supertest — 102 tests
+│   └── tests/                      # Vitest + Supertest — 109 tests
 ├── .env.example                    # template for env vars (copy to .env)
 ├── .gitignore
 ├── TTS-Build-Plan.md               # the phase-by-phase build plan
@@ -154,145 +154,7 @@ cd server && npm run dev
 # health: { "status": "ok", "tts": { "provider": "piper", "configured": true } }
 ```
 
-The pipeline (`providers/piper.js`, a faithful re-implementation of Piper's phonemize.cpp + Echogarden's VitsTTS reference): text → eSpeak-NG **Kirshenbaum phonemes** (WASM, using each model's *own* espeak voice) → `phoneme_id_map` ids with `^…# 🔊 Text-to-Speech Studio
-
-A full-stack text-to-speech application — **React (Vite)** client, **Node.js + Express** server, and a swappable TTS provider behind a server-side port. API keys never leave the server.
-
-**Current status: ✅ Phase 7 + neural voices — auth, history, favorites & offline human-sounding speech.**
-The full product loop works against the live API: type text (live counts) → pick language & voice from the catalog → **Generate** → play the MP3 in the browser → download it. Speech needs **no credit card and no account**: the default **Piper** provider (`TTS_PROVIDER=piper`) runs **neural VITS voices fully offline** — English (US/GB), Hindi, Spanish and French sound like recorded humans; Telugu & Tamil (no neural models exist yet) and any voice whose model files haven't been fetched fall back to the bundled eSpeak-NG engine automatically. A **Google Cloud TTS** adapter is also wired (`TTS_PROVIDER=google` + key). The frontend needed only a cosmetic change (a ⚡ neural badge): the proof the Phase 3 port was correct.
-Now hardened: **rate limit** (10 generations / IP / 15 min → `429` + `Retry-After`), **CORS allowlist** from `CLIENT_ORIGIN`, and **request-id structured logging** that records text *length* only — never content, never secrets.
-And multi-user: **create an account**, keep a **history** of every generation (replay + download from the server, no re-synthesis), and **★ favorite voices**. Auth is optional — anonymous generation works exactly as before (documented plan choice for 7.7).
-
-## What works right now
-
-| Route / screen | Status | Behavior |
-| --- | --- | --- |
-| **Web app** (`localhost:5173`) | ✅ | text input w/ counts · language/voice selectors · generate (spinner) · `<audio>` player · download · error mapping |
-| `GET /api/health` | ✅ | `200 { "status": "ok" }` |
-| `GET /api/contract` | ✅ | machine-readable frozen contract |
-| `GET /api/voices` | ✅ | 16 voices across 8 languages + `engine`/`quality` per voice + active `provider` |
-| `POST /api/tts` | ✅ | validates → `200 audio/mpeg` (neural Piper speech by default) · `400`/`415` on bad input · `500` on vendor auth failure · `503` on vendor timeout/down |
-| **TTS provider port** | ✅ | `piper` (**neural, offline, free** — default) · `espeak` (classic, all 8 languages) · `mock` (CI-safe) · `google` (neural, needs key) via `TTS_PROVIDER`; keys stay server-side |
-| **Hardening** | ✅ | rate limit `429` + `Retry-After` + `RateLimit-*` · CORS allowlist (no ACAO for foreign origins) · request-id + JSON logs (`textChars` only) |
-| **Accounts (JWT)** | ✅ | `POST /api/auth/register` · `POST /api/auth/login` · `GET /api/auth/me` — scrypt passwords, HS256 tokens (24 h), brute-force limiter |
-| **History** | ✅ | authenticated `POST /api/tts` saves every generation (SQLite row + `uploads/<uuid>.mp3`); `GET /api/history` · `DELETE /api/history/:id` (own rows only) |
-| **Favorites** | ✅ | `GET/POST/DELETE /api/favorites` — ★ in the voice selector, favorites-only filter |
-
-## Project layout
-
-```
-Text-to-Speech-Application/
-├── client/                        # React UI (Vite dev server on :5173)
-│   ├── src/
-│   │   ├── App.jsx                 # orchestrates the studio (spec §32 flow)
-│   │   ├── services/api.js         # getVoices() + synthesizeSpeech() — only place fetch lives
-│   │   ├── components/
-│   │   │   ├── TextInput.jsx       # textarea, live char+word count, 4000 cap, clear
-│   │   │   ├── LanguageSelector.jsx# unique languages from /api/voices
-│   │   │   ├── VoiceSelector.jsx   # voices filtered by selected language
-│   │   │   ├── GenerateButton.jsx  # POST /api/tts, spinner, disabled in flight
-│   │   │   ├── AudioPlayer.jsx     # <audio controls src={blobUrl}>
-│   │   │   ├── DownloadButton.jsx  # <a download="speech.mp3"> from same blob
-│   │   │   ├── ErrorMessage.jsx    # 400/429/503/network → human text
-│   │   │   ├── EndpointCard.jsx     # contract renderer
-│   │   │   ├── AuthPanel.jsx        # login / register / logout (Phase 7)
-│   │   │   └── HistoryPanel.jsx     # replay + download + delete (Phase 7)
-│   │   ├── __tests__/App.test.jsx  # RTL — 16 tests (plan 4.1–4.9, 7.7 + extras)
-│   │   └── test/setup.js           # jest-dom matchers + blob-URL stub
-│   └── vite.config.js              # dev proxy /api → :3000 + vitest config
-├── server/                         # Express API (listens on :3000)
-│   ├── server.js                   # entry point (only file that listens)
-│   ├── data/tts.db                  # SQLite DB (users, generations, favorites) — git-ignored
-│   ├── uploads/                     # saved generation MP3s (UUID names) — git-ignored
-│   ├── fixtures/beep.mp3           # mock TTS output — short "ding-dong" (3.9 KB)
-│   ├── src/
-│   │   ├── loadEnv.js              # loads .env (server only — tests never load it)
-│   │   ├── db.js                   # SQLite layer (node:sqlite) + schema + helpers
-│   │   ├── auth.js                 # scrypt passwords, HS256 JWT, requireAuth/optionalAuth
-│   │   ├── app.js                  # hardening (logs, CORS, rate limit) + routes + errors
-│   │   ├── contract.js             # ❄️ frozen contract, served at /api/contract
-│   │   ├── constants.js            # limits; allow-list derived from catalog
-│   │   ├── voiceCatalog.js         # 16 voices / 8 languages
-│   │   ├── validation.js           # pure validateTtsPayload()
-│   │   ├── services/ttsService.js  # provider port: env-based selection (mock ↔ google)
-│   │   ├── services/providers/
-│   │   │   ├── errors.js           # shared ProviderError (500|503 mapping)
-│   │   │   ├── mock.js             # fixture beep (CI/test default)
-│   │   │   ├── espeak.js           # eSpeak-NG WASM — real speech, offline
-│   │   │   └── google.js           # Google Cloud TTS REST adapter
-│   │   ├── audio/pcmToMp3.js        # PCM → MP3 encoder (lamejs)
-│   │   └── routes/                 # health, voices, tts, auth, history, favorites, audio
-│   └── tests/                      # Vitest + Supertest — 86 tests
-├── .env.example                    # template for env vars (copy to .env)
-├── .gitignore
-├── TTS-Build-Plan.md               # the phase-by-phase build plan
-└── README.md
-```
-
-## Quick start
-
-Requires **Node 20.19+** (or 22.12+).
-
-```bash
-# install (two terminals, or run each in a tab)
-cd server && npm install
-cd client && npm install
-
-# environment (no keys needed until Phase 5)
-cp .env.example .env
-
-# run the API server          → http://localhost:3000
-cd server && npm run dev
-
-# run the web app (new tab)   → http://localhost:5173
-cd client && npm run dev
-
-# run the automated tests
-cd server && npm test     # Vitest + Supertest — 30 tests
-cd client && npm test     # Vitest + RTL — 11 tests
-```
-
-## The studio (spec §32)
-
-```
-1. App mounts → GET /api/voices → fill language + voice selectors
-2. User types → counts update (client-side, capped at 4,000)
-3. Generate  → POST /api/tts → blob → URL.createObjectURL → <audio>
-4. Download  → same object URL, <a download="speech.mp3">
-5. Editing text clears the previous audio (simple + predictable)
-```
-
-Error mapping (`ErrorMessage.jsx`): `400` shows the server's validation sentence · `429` → "limit is 10 generations per 15 minutes" · `503` → "temporarily unavailable" · network → "cannot reach the server".
-
-Keyboard order follows DOM order (manual test 4.12): **textarea → language → voice → generate → player**. Layout is responsive down to 375 px (4.11).
-
-## TTS providers (Phase 5)
-
-All providers implement the same port — `synthesize({ text, language, voice }) → Promise<Buffer>` (MP3 bytes) — selected by `TTS_PROVIDER` in `.env` (read per call):
-
-| Provider | Real speech? | Needs key? | Needs network? | Quality |
-| --- | --- | --- | --- | --- |
-| **`piper`** *(default)* | ✅ **neural, 12 voices** | **no** | **no** (one-time model download) | **human-sounding VITS** |
-| `espeak` | ✅ **all 8 languages** | **no** | **no** | classic eSpeak (robotic, intelligible) |
-| `mock` | ❌ (fixture beep) | no | no | — |
-| `google` | ✅ neural | yes (`TTS_API_KEY`) | yes | natural |
-
-### Real speech without a credit card — `TTS_PROVIDER=espeak`
-
-The eSpeak-NG engine runs **in-process via WebAssembly** (`@echogarden/espeak-ng-emscripten`): no account, no API key, no network, no billing — and it covers every catalog language, including Telugu, Tamil and Hindi. Voices differ by gender for each language.
-
-```bash
-cp .env.example .env
-# edit .env:  TTS_PROVIDER=espeak
-cd server && npm run dev
-# health: { "status": "ok", "tts": { "provider": "espeak", "configured": true } }
-```
-
-Voice mapping (`providers/espeak.js`): `en-US` → `en-us`, `en-GB` → `en-gb-x-rp`, `en-IN` → `en` (eSpeak has no Indian-English voice), `hi-IN` → `hi`, `te-IN` → `te`, `ta-IN` → `ta`, `es-ES` → `es`, `fr-FR` → `fr`; catalog gender → eSpeak gender (1=male, 2=female). The engine emits 22 050 Hz mono PCM, encoded to MP3 server-side with `lamejs` (`services/audio/pcmToMp3.js`).
-
-Note: eSpeak-NG is **GPL-3.0** — fine for this project; keep it in mind if you ever ship a closed-source product (swap providers, same port).
-
- markers → VITS ONNX session (`input`/`input_lengths`/`scales`/`sid`) → float32 waveform at the model's sample rate → MP3 via the shared lamejs encoder. Models live in `server/.cache/piper-models/` (git-ignored); `PIPER_MODELS_DIR` overrides the location. Voice models are MIT-licensed (Piper / LibriTTS & friends).
+The pipeline (`providers/piper.js`, a faithful port of Piper's `phonemize.cpp` + `phonemes_to_ids`): text → **sentences** → eSpeak-NG **IPA phonemes** (WASM, using each model's *own* espeak voice) → NFD codepoints + `phoneme_map` → `phoneme_id_map` ids with `^…$` markers and `_` pads → VITS ONNX session per sentence (`input`/`input_lengths`/`scales`/`sid`) → float32 waveform at the model's sample rate → concatenated with 0.2 s sentence pauses → MP3 via the shared lamejs encoder. *(A first cut used espeak's Kirshenbaum notation instead of IPA — the id map is IPA-keyed, so most phonemes were dropped and the output was gibberish; caught from user feedback and fixed by porting piper's algorithm exactly, then verified by decoding every model's id sequence back to IPA.)*
 
 ### Google Cloud TTS (neural) — `TTS_PROVIDER=google`
 
@@ -314,7 +176,7 @@ For natural voices later: enable "Cloud Text-to-Speech API" in Google Cloud Cons
 
 ## Tests
 
-### Server — `cd server && npm test` (102 passing)
+### Server — `cd server && npm test` (109 passing)
 
 | Plan ID | Test | Result |
 | --- | --- | --- |
@@ -326,7 +188,7 @@ For natural voices later: enable "Cloud Text-to-Speech API" in Google Cloud Cons
 | 5.2/5.3/5.7 (offline equivalent) | **eSpeak engine, for real**: English MP3 scales with text · Telugu & Hindi scripts synthesize · female ≠ male voice bytes · all 8 catalog languages produce audio | ✅ |
 | + | espeak provider via route (200 `audio/mpeg`, `X-TTS-Provider: espeak`) · health reports espeak configured · PCM→MP3 encoder unit test | ✅ |
 | + (piper) | provider selection · health configured · voices expose engine/quality + active provider | ✅ |
-| + (piper) | phoneme→id encoding: ^/$ markers, _ separators, word/phrase breaks, ?/! endings, unmapped chars skipped, empty → null (pure unit tests) | ✅ |
+| + (piper) | sentence splitting (. ! ? and danda ।) · IPA encoding: BOS/pad/EOS placement, stress marks, NFD decomposition, phoneme_map substitution, (lang) flag filtering, clause `,`+space, terminators only when present | ✅ |
 | + (piper) | registry ↔ catalog coherence: 12 neural voices have models, te/ta stay classic | ✅ |
 | + (piper) | eSpeak fallback: te-IN via piper provider still 200 MP3 (warned); missing model files → fallback too | ✅ |
 | + (piper) | **real VITS** (models on disk): English scales with text · Devanagari Hindi · Spanish male≠female (two-speaker model) · POST /api/tts end-to-end | ✅ *(auto-skip without models)* |
