@@ -58,7 +58,12 @@ function authHeaders(token, extra = {}) {
 }
 
 // ── catalog & synthesis ───────────────────────────────────────────────
-/** GET /api/voices → array of { id, name, language, gender } */
+/**
+ * GET /api/voices → { voices, provider }.
+ * `voices`: array of { id, name, language, gender, engine, quality }.
+ * `provider`: the ACTIVE engine ('piper' ⇒ voices marked engine 'piper'
+ * render as neural speech; anything else renders classic eSpeak).
+ */
 export async function getVoices() {
   const res = await safeFetch('/api/voices');
   if (!res.ok) {
@@ -68,7 +73,7 @@ export async function getVoices() {
   if (!data || !Array.isArray(data.voices)) {
     throw new ApiError('Voice catalog came back in an unexpected shape', 0);
   }
-  return data.voices;
+  return { voices: data.voices, provider: data.provider };
 }
 
 /**

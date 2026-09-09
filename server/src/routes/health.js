@@ -10,8 +10,9 @@ const router = Router();
 
 router.get('/', (req, res) => {
   const provider = ttsService.providerName();
-  // mock and espeak need no configuration; hosted vendors need a key.
-  const needsKey = provider !== 'mock' && provider !== 'espeak';
+  // mock, espeak and piper (offline neural) need no configuration;
+  // hosted vendors need a key.
+  const needsKey = provider !== 'mock' && provider !== 'espeak' && provider !== 'piper';
   res.json({
     status: 'ok',
     tts: {

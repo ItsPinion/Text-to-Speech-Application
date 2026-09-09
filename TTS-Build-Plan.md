@@ -479,6 +479,30 @@ Authorization: user A cannot GET/DELETE user B’s ids (**403**).
 
 ---
 
+# PHASE 7.5 — Neural voices (Piper): "make it sound human"
+
+**Trigger:** user feedback after Phase 7 — "The generated texts sound totally robotic… Is there no way to make them sound human?" Constraints unchanged: free, no credit card, offline-capable.
+
+**Choice:** [Piper](https://github.com/OHF-Voice/piper1-gpl) voice models (neural VITS, MIT-licensed) run in-process via `onnxruntime-node` (CPU, ~0.2–0.7 s/sentence). Same port as every other provider: `TTS_PROVIDER=piper`.
+
+**What was built:**
+
+- `server/src/services/providers/piper.js` — full pipeline re-implemented from Piper's `phonemize.cpp` + Echogarden's `VitsTTS` reference: eSpeak-NG (WASM) emits **Kirshenbaum** phonemes using each *model's own* espeak voice → `phoneme_id_map` ids (`^…$` markers, `_` separators, word/phrase breaks, ?/! endings) → VITS ONNX session (`input`/`input_lengths`/`scales`/`sid`) → float32 @ model sample rate → shared lamejs MP3 encoder.
+- 9 models, 12 of 16 catalog voices: en-US (amy/joe), en-GB (jenny/northern male), en-IN (US models — no Indian-English Piper voice exists), hi-IN (priyamvada/rohan), es-ES (two-speaker sharvard: M=0/F=1), fr-FR (siwis/tom). **Telugu & Tamil: no Piper voices → automatic eSpeak fallback** (same for missing model files — the API never hard-fails).
+- `server/scripts/fetch-piper-models.sh` — one-time ~560 MB download via git sparse-clone (the official HF/release CDNs are blocked on some networks; the same files are mirrored as plain git blobs).
+- Catalog: every voice now carries `engine` ('piper'|'espeak') + `quality` ('neural'|'classic'); `GET /api/voices` also reports the active `provider`. UI: ⚡ neural badge in the voice selector (only when piper is actually active).
+- Models live in `server/.cache/piper-models/` (git-ignored), `PIPER_MODELS_DIR` overrides.
+
+**How the models were sourced (network-constrained sandbox):** `onnxruntime-node@1.16.3` bundles its native binaries in the npm tarball (≥1.17 postinstall-fetches from nuget.org — blocked). Release-asset CDNs (Hugging Face, release-assets.githubusercontent.com) were unreachable; the identical `.onnx` files were pulled from public repos that commit them as plain git blobs via `git clone --filter=blob:none --sparse`.
+
+**Tests (`server/tests/tts.piper.test.js`, +16 → 102 total):** provider selection & health · voices engine/provider fields · pure phoneme→id encoding (markers, separators, breaks, ?/!, unmapped-skip, empty→null) · registry↔catalog coherence · eSpeak fallback (no-model voice + missing-files) · real VITS inference (English scaling, Devanagari Hindi, Spanish two-speaker M≠F, end-to-end POST) — inference tier auto-skips on machines without models.
+
+**Live verification:** all 8 neural voices + te fallback returned valid MP3s (`demo/neural-*.mp3`); authed generation saved to history with fetchable `audioUrl`; `X-TTS-Provider: piper` header confirmed.
+
+**What it brings:** human-sounding speech, still $0, still offline, still no account — the "no credit card" promise kept at neural quality.
+
+---
+
 # PHASE 8 — Level 3: Files, AI enhance, customization, admin
 
 **Duration:** 1–2 weeks (stretch)  

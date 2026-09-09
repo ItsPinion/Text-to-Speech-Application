@@ -2,12 +2,17 @@
  * VoiceSelector — voices filtered by the selected language, with
  * Phase 7 favorites: ★ toggles the selected voice; the checkbox filters
  * the list down to favorites.
+ *
+ * `engine` is the ACTIVE provider (from /api/health): when it's 'piper',
+ * voices whose catalog engine is 'piper' render with a ⚡ neural badge —
+ * human-sounding VITS voices running fully offline.
  */
 export default function VoiceSelector({
   voices,
   value,
   onChange,
   disabled,
+  engine,
   favorites = new Set(),
   onToggleFavorite,
   favoritesOnly,
@@ -44,6 +49,7 @@ export default function VoiceSelector({
           <option key={v.id} value={v.id}>
             {favorites.has(v.id) ? '★ ' : ''}
             {v.name} · {v.gender}
+            {engine === 'piper' && v.engine === 'piper' ? ' · ⚡ neural' : ''}
           </option>
         ))}
       </select>

@@ -15,7 +15,8 @@
     "@echogarden/espeak-ng-emscripten": "^0.3.5",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
-    "lamejs": "^1.2.1"
+    "lamejs": "^1.2.1",
+    "onnxruntime-node": "^1.16.3"
   },
   "devDependencies": {
     "supertest": "^7.1.0",

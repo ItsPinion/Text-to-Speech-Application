@@ -1,6 +1,7 @@
 import { mockProvider } from './providers/mock.js';
 import { espeakProvider } from './providers/espeak.js';
 import { googleProvider } from './providers/google.js';
+import { piperProvider } from './providers/piper.js';
 
 /**
  * TTS service — the swappable port (Phase 3 design, Phase 5 reality).
@@ -15,6 +16,10 @@ import { googleProvider } from './providers/google.js';
  *   TTS_PROVIDER=mock    (default — CI and keyless dev; fixture beep)
  *   TTS_PROVIDER=espeak  (REAL speech, 100% offline — no key, no network,
  *                         no billing; all 8 catalog languages incl. Telugu)
+ *   TTS_PROVIDER=piper   (NEURAL VITS speech, 100% offline — the
+ *                         human-sounding default; te-IN/ta-IN and any
+ *                         voice whose model files are missing fall back
+ *                         to eSpeak automatically)
  *   TTS_PROVIDER=google  (neural speech via Google Cloud TTS; needs
  *                         TTS_API_KEY)
  *
@@ -25,6 +30,7 @@ import { googleProvider } from './providers/google.js';
 const PROVIDERS = {
   mock: mockProvider,
   espeak: espeakProvider,
+  piper: piperProvider,
   google: googleProvider,
 };
 

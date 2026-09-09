@@ -84,7 +84,7 @@ export default function App() {
     let cancelled = false;
 
     getVoices()
-      .then((list) => {
+      .then(({ voices: list }) => {
         if (cancelled) return;
         setVoices(list);
         const langs = [...new Set(list.map((v) => v.language))];
@@ -279,6 +279,7 @@ export default function App() {
             value={voice}
             onChange={setVoice}
             disabled={!voices}
+            engine={ttsProvider}
             favorites={favorites}
             onToggleFavorite={user ? handleToggleFavorite : undefined}
             favoritesOnly={favoritesOnly}
