@@ -19,8 +19,8 @@ import { espeakProvider } from './espeak.js';
  * The pipeline is a faithful re-implementation of Piper's own
  * phonemize.cpp + the JS reference in Echogarden's VitsTTS:
  *
- *   text ─eSpeak-NG (Kirshenbaum)→ phrases/words/phonemes
- *       ─phoneme_id_map→ int64 ids with ^ … $ markers and _ separators
+ *   text ─eSpeak-NG (IPA)→ sentences→clauses/words/phonemes
+ *       ─NFD + phoneme_map→ int64 ids with ^ … $ markers and _ separators
  *       ─VITS ONNX session→ float32 waveform @ model sample rate
  *       ─lamejs→ MP3 (same encoder + contract as the eSpeak provider)
  *
@@ -92,69 +92,109 @@ function getEspeak() {
 }
 
 /**
- * Pure helper (exported for tests): Kirshenbaum phoneme string → VITS id
- * sequence, mirroring Piper's phonemize.cpp:
- *
- *   ^ _ …phonemes… _ (word sep: ' ') … (phrase break: ',') … _ . _ $
- *
- * Phrases in the espeak output are separated by " | ", words by spaces,
- * phonemes within a word by '_'. Characters missing from the model's
- * phoneme_id_map are skipped (same as Piper / Echogarden).
+ * Split text into sentences (each keeping its terminator), mirroring
+ * piper's per-sentence synthesis: VITS models are trained on short
+ * utterances, so each sentence is inferred separately and the audio is
+ * concatenated. Handles Latin punctuation plus the Devanagari danda (।)
+ * and ellipsis (…).
  */
-export function buildPhonemeIds(config, kirshenbaum, text) {
-  const map = new Map(Object.entries(config.phoneme_id_map));
-  const sep = map.get('_');
-  const wordSep = map.get(' ');
-  const start = map.get('^');
-  const end = map.get('$');
-  if (!sep || !wordSep || !start || !end) {
-    throw new Error('model config is missing ^/$/_/space in phoneme_id_map');
-  }
-
-  const phrases = String(kirshenbaum ?? '')
-    .split(' | ')
-    .map((phrase) =>
-      phrase
-        .trim()
-        .split(/ +/)
-        .filter(Boolean)
-        .map((word) => word.split('_').filter((p) => p && !p.startsWith('('))),
-    )
-    .filter((words) => words.length > 0);
-
-  if (phrases.length === 0) return null; // nothing phonemizable
-
-  // Sentence-final punctuation is encoded explicitly (Piper does the
-  // same) so questions actually sound like questions.
-  const last = String(text ?? '').trim().slice(-1);
-  const endBreaker = map.get(last === '?' ? '?' : last === '!' ? '!' : '.');
-
-  const ids = [...start, ...sep];
-  const totalWords = phrases.reduce((a, p) => a + p.length, 0);
-  let wordIndex = 0;
-  for (let pi = 0; pi < phrases.length; pi++) {
-    for (const word of phrases[pi]) {
-      for (const phoneme of word) {
-        for (const ch of phoneme) {
-          const id = map.get(ch);
-          if (id) ids.push(...id, ...sep);
-        }
-      }
-      wordIndex++;
-      if (wordIndex < totalWords) ids.push(...wordSep, ...sep);
-    }
-    if (pi < phrases.length - 1) ids.push(...map.get(','), ...sep);
-  }
-  if (endBreaker) ids.push(...endBreaker, ...sep);
-  ids.push(...end);
-  return ids;
+export function splitSentences(text) {
+  const matches =
+    String(text ?? '').match(/[^.!?…।]*[.!?…।]+["'”’)\]]*\s*|[^.!?…।]+/g) || [];
+  return matches.map((s) => s.trim()).filter(Boolean);
 }
 
-/** Read a NUL-terminated UTF-8 string from the WASM heap. */
-function readCString(heapU8, ptr) {
-  let end = ptr;
-  while (end < heapU8.length && heapU8[end] !== 0) end++;
-  return new TextDecoder('utf-8').decode(heapU8.subarray(ptr, end));
+/** The effective terminator phoneme for a sentence ('.' | '?' | '!' | null). */
+function sentenceTerminator(sentence) {
+  const m = String(sentence ?? '').match(/[.!?…।]/g);
+  if (!m) return null;
+  const last = m[m.length - 1];
+  return last === '?' ? '?' : last === '!' ? '!' : '.';
+}
+
+/**
+ * Pure helper (exported for tests): ONE sentence's espeak-ng IPA output
+ * → the VITS id sequence, mirroring piper-phonemize's phonemize_eSpeak +
+ * phonemes_to_ids exactly:
+ *
+ *   ^ p _ p _ … p _ $        (no pad after ^, pad after EVERY phoneme)
+ *
+ * IPA format from the WASM: clauses separated by " | ", words by spaces,
+ * phonemes within a word by '_'. Multi-codepoint tokens (oʊ, ɜː, ĩ) are
+ * decomposed with NFD and each codepoint is looked up separately — this
+ * is exactly what piper does (una::norm::to_nfd_utf8 + codepoint range).
+ * Language-switch flags "(xx)" are filtered; config.phoneme_map
+ * substitutions are applied; unmapped codepoints are skipped (piper
+ * logs a warning and continues).
+ *
+ * Clause handling (piper appends the clause terminator's punctuation):
+ * non-final clauses end with ',' + ' '; the sentence terminator (a '.',
+ * '?' or '!' — only if the text actually has one) is appended after the
+ * final clause. Word separators are the literal ' ' phoneme between words.
+ */
+export function buildPhonemeIds(config, ipa, sentence) {
+  const map = new Map(Object.entries(config.phoneme_id_map));
+  const pad = map.get('_');
+  const bos = map.get('^');
+  const eos = map.get('$');
+  if (!pad || !bos || !eos) {
+    throw new Error('model config is missing ^/$/_ in phoneme_id_map');
+  }
+  const phonemeMap = config.phoneme_map || {};
+
+  const clauses = String(ipa ?? '')
+    .split(' | ')
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (clauses.length === 0) return null;
+
+  const out = [...bos];
+  const emitPhoneme = (ch) => {
+    // config.phoneme_map: codepoint → replacement string (piper applies
+    // it before the id lookup; default maps exist only for pt-br).
+    const replacement = phonemeMap[ch] ?? ch;
+    for (const sub of String(replacement).normalize('NFD')) {
+      const id = map.get(sub);
+      if (id) out.push(...id, ...pad);
+    }
+  };
+  const emitPunctuation = (ch) => {
+    const id = map.get(ch);
+    if (id) out.push(...id, ...pad);
+  };
+
+  let emittedPhoneme = false;
+  for (let ci = 0; ci < clauses.length; ci++) {
+    const words = clauses[ci].split(/ +/).filter(Boolean);
+    for (let wi = 0; wi < words.length; wi++) {
+      let inLangFlag = false;
+      for (const token of words[wi].split('_')) {
+        for (const ch of token.normalize('NFD')) {
+          if (inLangFlag) {
+            if (ch === ')') inLangFlag = false;
+            continue; // skip "(en)" language-switch flags (piper does too)
+          }
+          if (ch === '(') {
+            inLangFlag = true;
+            continue;
+          }
+          emitPhoneme(ch);
+          emittedPhoneme = true;
+        }
+      }
+      if (wi < words.length - 1) emitPunctuation(' ');
+    }
+    if (ci < clauses.length - 1) {
+      emitPunctuation(','); // pause between clauses…
+      emitPunctuation(' '); // …and piper adds a space after the comma
+    }
+  }
+  if (!emittedPhoneme) return null; // nothing phonemizable
+
+  const terminator = sentenceTerminator(sentence);
+  if (terminator) emitPunctuation(terminator);
+  out.push(...eos);
+  return out;
 }
 
 /** Load (and cache) one Piper model: ONNX session + its JSON config. */
@@ -225,72 +265,94 @@ async function synthesize({ text, language, voice }) {
     throw new ProviderError(`Piper model load failed: ${err?.message ?? err}`, 500);
   }
 
-  // 1. Phonemize with the model's OWN espeak voice (en_US-amy needs
-  //    'en-us', hi_IN-priyamvada needs 'hi', …) — not the request
-  //    language. This is what makes cross-language voices (en-IN→US
-  //    model) phonemize correctly.
-  let kirshenbaum;
-  try {
-    const { mod, worker } = await getEspeak();
-    worker.set_voice(model.config.espeak.voice);
-    const ref = worker.convert_to_phonemes(text, 0); // 0 = Kirshenbaum (not IPA)
-    kirshenbaum = readCString(mod.HEAPU8, ref.ptr);
-  } catch (err) {
-    throw new ProviderError(`eSpeak-NG phonemization failed: ${err?.message ?? err}`, 500);
+  // 1–3. Per SENTENCE (piper synthesizes each sentence separately — the
+  // models are trained on short utterances): phonemize with the model's
+  // OWN espeak voice in IPA mode, encode to ids, run VITS.
+  const ort = model.ort;
+  const sentences = splitSentences(text);
+  const pcmChunks = [];
+  const sentenceSilence = new Int16Array(
+    Math.floor(0.2 * model.config.audio.sample_rate), // piper CLI default
+  );
+
+  for (const sentence of sentences) {
+    // 1. Phonemize (IPA — the phoneme_id_map is IPA-keyed: ə ɪ ʊ ð ˈ ˌ…)
+    let ipa;
+    try {
+      const { mod, worker } = await getEspeak();
+      worker.set_voice(model.config.espeak.voice);
+      const ref = worker.convert_to_phonemes(sentence, 1); // 1 = IPA
+      let end = ref.ptr;
+      while (end < mod.HEAPU8.length && mod.HEAPU8[end] !== 0) end++;
+      ipa = new TextDecoder('utf-8').decode(mod.HEAPU8.subarray(ref.ptr, end));
+    } catch (err) {
+      throw new ProviderError(`eSpeak-NG phonemization failed: ${err?.message ?? err}`, 500);
+    }
+
+    // 2. Phonemes → id sequence
+    let ids;
+    try {
+      ids = buildPhonemeIds(model.config, ipa, sentence);
+    } catch (err) {
+      throw new ProviderError(`phoneme encoding failed: ${err?.message ?? err}`, 500);
+    }
+    if (!ids) continue; // nothing phonemizable in this sentence
+
+    // 3. VITS inference
+    const bigIds = new BigInt64Array(ids.map((i) => BigInt(i)));
+    const inputs = {
+      input: new ort.Tensor('int64', bigIds, [1, bigIds.length]),
+      input_lengths: new ort.Tensor('int64', new BigInt64Array([BigInt(bigIds.length)]), [1]),
+      scales: new ort.Tensor(
+        'float32',
+        [
+          model.config.inference.noise_scale,
+          model.config.inference.length_scale,
+          model.config.inference.noise_w,
+        ],
+        [3],
+      ),
+    };
+    if (model.hasSid) {
+      inputs.sid = new ort.Tensor(
+        'int64',
+        new BigInt64Array([BigInt(entry.speaker ?? 0)]),
+        [1],
+      );
+    }
+
+    let audio;
+    try {
+      const out = await model.session.run(inputs);
+      audio = out.output.data; // Float32Array, roughly [-1, 1]
+    } catch (err) {
+      throw new ProviderError(`Piper inference failed: ${err?.message ?? err}`, 500);
+    }
+    if (!audio || audio.length === 0) continue;
+
+    // float32 → int16 PCM
+    const pcm = new Int16Array(audio.length);
+    for (let i = 0; i < audio.length; i++) {
+      const s = Math.round(audio[i] * 32767);
+      pcm[i] = s < -32768 ? -32768 : s > 32767 ? 32767 : s;
+    }
+    if (pcmChunks.length > 0) pcmChunks.push(sentenceSilence);
+    pcmChunks.push(pcm);
   }
 
-  // 2. Phonemes → id sequence
-  let ids;
-  try {
-    ids = buildPhonemeIds(model.config, kirshenbaum, text);
-  } catch (err) {
-    throw new ProviderError(`phoneme encoding failed: ${err?.message ?? err}`, 500);
-  }
-  if (!ids || ids.length <= 2) {
+  if (pcmChunks.length === 0) {
     throw new ProviderError('Piper produced no phonemes for this text');
   }
 
-  // 3. VITS inference
-  const bigIds = new BigInt64Array(ids.map((i) => BigInt(i)));
-  const inputs = {
-    input: new model.ort.Tensor('int64', bigIds, [1, bigIds.length]),
-    input_lengths: new model.ort.Tensor('int64', new BigInt64Array([BigInt(bigIds.length)]), [1]),
-    scales: new model.ort.Tensor(
-      'float32',
-      [
-        model.config.inference.noise_scale,
-        model.config.inference.length_scale,
-        model.config.inference.noise_w,
-      ],
-      [3],
-    ),
-  };
-  if (model.hasSid) {
-    inputs.sid = new model.ort.Tensor(
-      'int64',
-      new BigInt64Array([BigInt(entry.speaker ?? 0)]),
-      [1],
-    );
+  // 4. Concatenated PCM → MP3 at the model's native sample rate
+  const total = pcmChunks.reduce((a, c) => a + c.length, 0);
+  const pcmAll = new Int16Array(total);
+  let offset = 0;
+  for (const c of pcmChunks) {
+    pcmAll.set(c, offset);
+    offset += c.length;
   }
-
-  let audio;
-  try {
-    const out = await model.session.run(inputs);
-    audio = out.output.data; // Float32Array, roughly [-1, 1]
-  } catch (err) {
-    throw new ProviderError(`Piper inference failed: ${err?.message ?? err}`, 500);
-  }
-  if (!audio || audio.length === 0) {
-    throw new ProviderError('Piper produced no audio for this text');
-  }
-
-  // 4. float32 → int16 PCM → MP3 at the model's native sample rate
-  const pcm = new Int16Array(audio.length);
-  for (let i = 0; i < audio.length; i++) {
-    const s = Math.round(audio[i] * 32767);
-    pcm[i] = s < -32768 ? -32768 : s > 32767 ? 32767 : s;
-  }
-  const mp3 = encodeMp3FromInt16Pcm(pcm, model.config.audio.sample_rate);
+  const mp3 = encodeMp3FromInt16Pcm(pcmAll, model.config.audio.sample_rate);
   if (mp3.length === 0) {
     throw new ProviderError('MP3 encoding produced no bytes');
   }
@@ -305,6 +367,7 @@ export const _internals = {
   modelsDir,
   modelFilesPresent,
   buildPhonemeIds,
+  splitSentences,
   clearCaches() {
     sessionCache.clear();
     warnedFallbacks.clear();

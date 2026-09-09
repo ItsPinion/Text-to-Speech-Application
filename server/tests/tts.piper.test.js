@@ -65,54 +65,111 @@ describe('provider selection (Piper)', () => {
   });
 });
 
+describe('sentence splitting (piper synthesizes per sentence)', () => {
+  it('splits on . ! ? keeping terminators', () => {
+    expect(_internals.splitSentences('Hello world! Does this work? Yes.')).toEqual([
+      'Hello world!',
+      'Does this work?',
+      'Yes.',
+    ]);
+  });
+
+  it('keeps text without terminators as one sentence; handles danda (।)', () => {
+    expect(_internals.splitSentences('just some words')).toEqual(['just some words']);
+    expect(_internals.splitSentences('नमस्ते। यह हिंदी है।')).toEqual(['नमस्ते।', 'यह हिंदी है।']);
+  });
+
+  it('drops whitespace-only pieces', () => {
+    expect(_internals.splitSentences('Hi.   ')).toEqual(['Hi.']);
+  });
+});
+
 describe('phoneme → id encoding (pure logic, no models)', () => {
-  // A miniature phoneme_id_map in the shape of a real Piper config.
+  // A miniature phoneme_id_map in the shape of a real Piper config —
+  // IPA-keyed, like the real ones (ə ɪ ʊ ð ʌ ˈ ˌ …).
   const CONFIG = {
     inference: { noise_scale: 0.667, length_scale: 1, noise_w: 0.8 },
     audio: { sample_rate: 22050 },
+    phoneme_map: { ɾ: 'r' }, // like piper's pt-br default map
     phoneme_id_map: {
       '^': [1], '$': [2], '_': [0], ' ': [3],
       ',': [8], '.': [10], '?': [13], '!': [4],
-      h: [20], '@': [24], 'l': [27], 'o': [31], 'U': [38],
-      w: [40], '3': [41], ':' : [42], 'd': [44], 'm': [45],
+      h: [20], ə: [24], l: [27], o: [31], ʊ: [38],
+      w: [40], ɜ: [41], ː: [42], d: [44], ʌ: [46],
+      ˈ: [120], ˌ: [121], ɾ: [53], r: [52], i: [47], '\u0303': [51], // combining tilde
     },
   };
 
-  it('encodes start/end markers, phoneme separators and word boundaries', () => {
-    // "h@lloU" | "w3:ld"  for text "Hello world."
-    const ids = _internals.buildPhonemeIds(CONFIG, 'h_@_l_l_oU | w_3:_l_d', 'Hello world.');
+  it('encodes IPA: BOS, per-codepoint ids with pad, stress marks, EOS', () => {
+    // "Hello world." → espeak IPA: h_ə_l_ˈoʊ w_ˈɜː_l_d
+    // 'ˈoʊ' is one token → codepoints ˈ, o, ʊ (piper iterates codepoints)
+    const ids = _internals.buildPhonemeIds(CONFIG, 'h_ə_l_ˈoʊ w_ˈɜː_l_d', 'Hello world.');
     expect(ids).toEqual([
-      1, 0, // ^ _
-      20, 0, 24, 0, 27, 0, 27, 0, 31, 0, 38, 0, // h @ l l o U
-      3, 0, // word separator (more words follow)
-      8, 0, // phrase break ',' (closes phrase 1)
-      40, 0, 41, 0, 42, 0, 27, 0, 44, 0, // w 3 : l d
-      10, 0, // sentence-end '.'
-      2, // $
+      1, // ^ (no pad after BOS — piper: list(id_map[BOS]))
+      20, 0, 24, 0, 27, 0, // h ə l
+      120, 0, 31, 0, 38, 0, // ˈ o ʊ
+      3, 0, // word separator ' '
+      40, 0, 120, 0, 41, 0, 42, 0, 27, 0, 44, 0, // w ˈ ɜ ː l d
+      10, 0, // sentence terminator '.'
+      2, // $ (EOS)
     ]);
   });
 
   it('ends questions with "?" and exclamations with "!"', () => {
-    const q = _internals.buildPhonemeIds(CONFIG, 'w_3:_l_d', 'world?');
-    expect(q).toEqual([1, 0, 40, 0, 41, 0, 42, 0, 27, 0, 44, 0, 13, 0, 2]);
-    const e = _internals.buildPhonemeIds(CONFIG, 'w_3:_l_d', 'world!');
-    expect(e).toEqual([1, 0, 40, 0, 41, 0, 42, 0, 27, 0, 44, 0, 4, 0, 2]);
+    const q = _internals.buildPhonemeIds(CONFIG, 'w_ˈɜː_l_d', 'world?');
+    expect(q.slice(-4)).toEqual([0, 13, 0, 2]); // …d _ ? _ $
+    const e = _internals.buildPhonemeIds(CONFIG, 'w_ˈɜː_l_d', 'world!');
+    expect(e.slice(-4)).toEqual([0, 4, 0, 2]); // …d _ ! _ $
   });
 
-  it('skips characters missing from the model map (like Piper does)', () => {
+  it('NO terminator phoneme when the text has no sentence punctuation', () => {
+    const ids = _internals.buildPhonemeIds(CONFIG, 'w_ˈɜː_l_d', 'world');
+    expect(ids.slice(-3)).toEqual([44, 0, 2]); // d _ $ — nothing between
+  });
+
+  it('clause breaks encode as "," + " " (piper appends both)', () => {
+    // "Hello, world." → two clauses in the IPA (' | ' separated)
+    const ids = _internals.buildPhonemeIds(CONFIG, 'h_ə_l_ˈoʊ | w_ˈɜː_l_d', 'Hello, world.');
+    const joined = ids.join(',');
+    expect(joined).toContain([8, 0, 3, 0].join(',')); // , _ (space) _
+  });
+
+  it('NFD-decomposes accented phonemes (ĩ → i + combining tilde)', () => {
+    // 'ĩ' (precomposed or composed) → codepoints i and ̃, each with its own id
+    const ids = _internals.buildPhonemeIds(CONFIG, 'h_ˈĩ_d_i', 'hindi');
+    expect(ids).toEqual([
+      1,
+      20, 0, // h
+      120, 0, // ˈ
+      47, 0, 51, 0, // i + combining tilde (NFD)
+      44, 0, // d
+      47, 0, // i
+      2, // $ — no terminator phoneme ("hindi" has no punctuation)
+    ]);
+  });
+
+  it('applies config.phoneme_map substitutions (ɾ → r)', () => {
+    const ids = _internals.buildPhonemeIds(CONFIG, 'w_ˈɜː_ɾ_d', 'world');
+    expect(ids).toContain(52); // r
+    expect(ids).not.toContain(53); // ɾ replaced
+  });
+
+  it('filters espeak "(lang)" switch flags', () => {
+    const ids = _internals.buildPhonemeIds(CONFIG, 'h_(en)_ə_l', 'hal');
+    const joined = ids.join(',');
+    // no ids for ( e n ) — just h ə l, then $ ("hal" has no terminator)
+    expect(ids).toEqual([1, 20, 0, 24, 0, 27, 0, 2]);
+  });
+
+  it('skips codepoints missing from the model map (piper warns + continues)', () => {
     const ids = _internals.buildPhonemeIds(CONFIG, 'h_#_l', 'hl'); // '#' unmapped
-    expect(ids).toEqual([1, 0, 20, 0, 27, 0, 10, 0, 2]);
-  });
-
-  it('filters stress markers and empty phoneme pieces', () => {
-    // '(' prefix = espeak stress marker; double underscores make empties
-    const ids = _internals.buildPhonemeIds(CONFIG, 'h_(l_@__', 'hla');
-    expect(ids).toEqual([1, 0, 20, 0, 24, 0, 10, 0, 2]);
+    expect(ids).toEqual([1, 20, 0, 27, 0, 2]);
   });
 
   it('returns null for input with nothing phonemizable', () => {
-    expect(_internals.buildPhonemeIds(CONFIG, '', '...')).toBeNull();
-    expect(_internals.buildPhonemeIds(CONFIG, '   ', '...')).toBeNull();
+    expect(_internals.buildPhonemeIds(CONFIG, '', 'hi')).toBeNull();
+    expect(_internals.buildPhonemeIds(CONFIG, '   ', 'hi')).toBeNull();
+    expect(_internals.buildPhonemeIds(CONFIG, '(#)', 'hi')).toBeNull();
   });
 });
 
