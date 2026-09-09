@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+out/
+
+# Environment — NEVER commit real secrets (.env.example is the template)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test / coverage
+coverage/
+
+# Local dev artifacts
+.DS_Store
+*.local
+uploads/
+demo/
+
+# Phase 7: local SQLite database file (never commit user data)
+data/
