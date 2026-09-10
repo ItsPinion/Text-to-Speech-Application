@@ -13,8 +13,8 @@ Express API. **Rule #1: API keys never leave the server.**
 | 2 | Validation layer (`POST /api/tts` rejects garbage, 501 on valid) | ✅ Done |
 | 3 | Mock TTS + audio response + `GET /api/voices` | ✅ Done |
 | 4 | React UI (input, counts, language/voice, player, download) | ✅ Done — **Level 1 demo complete** |
-| 5 | Real TTS provider behind the same interface | ⬜ Next |
-| 6 | Hardening: rate limit, CORS allow-list, structured logs | ⬜ |
+| 5 | Real TTS provider (Google Cloud TTS) behind the same interface | ✅ Done |
+| 6 | Hardening: rate limit, CORS allow-list, structured logs | ⬜ Next |
 | 7–9 | Auth/history, advanced features, deploy | ⬜ |
 
 ## Stack
@@ -154,8 +154,41 @@ voice must exist in the catalog · voice must speak the requested language ·
 | 503 | TTS provider unavailable/timeout | `{"success":false,"error":"TTS provider unavailable"}` |
 
 The mock provider streams a per-voice fixture MP3 (~1 s pitched dual-beep —
-speakers are audibly distinct). Phase 5 swaps `ttsService`'s provider; the
-route, contract, and UI do not change.
+speakers are audibly distinct).
+
+### Provider selection (Phase 5)
+
+`TTS_PROVIDER` picks the implementation behind the **same** `synthesize()`
+interface — the route, contract, and UI do not change:
+
+| `TTS_PROVIDER` | Behavior | Needs a key? |
+| --- | --- | --- |
+| `mock` *(default)* | Per-voice fixture MP3s | No — CI runs this |
+| `google` | Google Cloud TTS (`Neural2` voices), MP3 out | Yes — `TTS_API_KEY` |
+
+Google error mapping (plan Phase 5): missing/invalid key (**401/403**) → vague
+**500** "Internal server error" — the key and vendor message never reach the
+client; timeout (default 30 s, `TTS_TIMEOUT_MS`) / network / vendor errors →
+**503** "TTS provider unavailable". Voice ids map to Google names in
+`src/services/providers/googleTts.js` (e.g. `en-US-female-1` → `en-US-Neural2-F`).
+
+To use real speech locally:
+
+```bash
+cp .env.example apps/server/.env
+# edit apps/server/.env: TTS_PROVIDER=google, TTS_API_KEY=<your key>
+pnpm dev
+```
+
+Real-key integration tests (plan 5.2/5.3/5.7) run only when a key is present:
+
+```bash
+TTS_PROVIDER=google TTS_API_KEY=<your key> TTS_API_KEY_REAL=1 \
+  pnpm --filter @tts/server test
+```
+
+To verify the key never leaks (plan 5.6): `grep -r TTS_API_KEY apps/client/` →
+zero matches in source and bundle.
 
 ## Environment variables
 
@@ -169,7 +202,8 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 | `CLIENT_ORIGIN` | `http://localhost:5173` | server | CORS placeholder (allow-list hardened in Phase 6) |
 | `TTS_PROVIDER` | `mock` | server | `mock` needs no key; vendor choice lands Phase 5 |
 | `TTS_API_KEY` | *(blank)* | server | **Server-only.** Never in client code or bundles |
-| `TTS_REGION` | *(blank)* | server | Vendor region (Phase 5) |
+| `TTS_REGION` | *(blank)* | server | Vendor region (future providers) |
+| `TTS_TIMEOUT_MS` | `30000` | server | Vendor request timeout; overdue → 503 |
 | `VITE_API_URL` | *(blank)* | client | Empty in dev (Vite proxy); absolute API origin in prod (Phase 9) |
 
 ## Tests
@@ -178,7 +212,8 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
 ```
 
-**Status: Phase 0–4 verified 2026-09-10 — 45/45 automated green (32 server + 13 client).**
+**Status: Phase 0–5 verified 2026-09-10 — 45 server + 13 client green (3 vendor
+tests skip without a real key).**
 
 ### Server (`apps/server/tests/`, Vitest + Supertest)
 
@@ -206,6 +241,13 @@ pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
 | 3.4 | 3 | Voice ≠ requested language | **400**, "does not speak" | ✅ |
 | 3.5 | 3 | Manual: save response as `.mp3` | Valid MPEG frame chain (40 frames, ~1 s), playable | ✅ |
 | 3.6 | 3 | Regression: Phase 2 suite | 400s intact; valid input now **200** (was 501) | ✅ |
+| 5.1 | 5 | Full suite with `TTS_PROVIDER=mock` | All green — CI needs no secrets | ✅ |
+| 5.2 | 5 | Real key: English sentence | **200** real-speech MP3 *(needs key — gated)* | ⏭ skips without key |
+| 5.3 | 5 | Real key: Hindi sentence | Intelligible hi-IN speech *(needs key — gated)* | ⏭ skips without key |
+| 5.4 | 5 | Wrong API key (401/403) | **500** vague body — key & vendor msg never leak | ✅ (stubbed + missing-key) |
+| 5.5 | 5 | Vendor timeout / network stub | **503** "TTS provider unavailable" | ✅ |
+| 5.6 | 5 | `grep TTS_API_KEY` in client src + dist | Zero matches | ✅ |
+| 5.7 | 5 | Two voices → different audio | Different buffers *(real key)* · fixtures differ per voice | ✅ |
 
 ### Client (`apps/client/src/`, Vitest + React Testing Library)
 
@@ -261,6 +303,8 @@ targets, `prefers-reduced-motion` support.
 ## Roadmap
 
 See [`TTS-Build-Plan.md`](./TTS-Build-Plan.md) for the full phase-by-phase plan.
-**Level 1 is demo-complete (Phases 0–4).** Next up — **Phase 5**: a real TTS
-vendor behind the same `synthesize()` interface (`TTS_PROVIDER=mock` stays for
-CI), then **Phase 6** hardening (rate limit, CORS allow-list, structured logs).
+**Level 1 is demo-complete (Phases 0–5): mock by default, one env var away from
+real Google speech.** Next up — **Phase 6** hardening: `express-rate-limit`
+(10 TTS / 15 min / IP with `Retry-After`), `CLIENT_ORIGIN` CORS allow-list,
+request-id structured logging, and `GET /api/health` reporting
+`tts: "mock" | "configured"`.

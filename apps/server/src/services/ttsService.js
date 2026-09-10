@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
-import { env } from '../config/env.js';
+import { getTtsConfig } from '../config/env.js';
+import { googleTts } from './providers/googleTts.js';
 import { findVoice } from './voiceCatalog.js';
 
 /**
@@ -49,16 +50,23 @@ function mockSynthesize({ voice }) {
 }
 
 /**
- * Synthesize speech for a validated request.
+ * Synthesize speech for a validated request — the Phase 5 payoff: the
+ * provider is picked per call from TTS_PROVIDER ("mock" | "google") and
+ * every branch satisfies the same port:
+ *
+ *   synthesize({ text, language, voice }) → Promise<Buffer>
+ *
  * Rejects with Error('TTS provider unavailable') when no provider matches —
- * the route maps that to the contract's 503.
+ * the route maps that to the contract's 503. Google errors carry a `kind`
+ * (auth/timeout/network/provider) for the route's status mapping.
  */
 export function synthesize(request) {
-  switch (env.ttsProvider) {
+  switch (getTtsConfig().provider) {
     case 'mock':
       return mockSynthesize(request);
+    case 'google':
+      return googleTts(request);
     default:
-      // Phase 5: real vendors register here, selected by TTS_PROVIDER.
       return Promise.reject(new Error('TTS provider unavailable'));
   }
 }

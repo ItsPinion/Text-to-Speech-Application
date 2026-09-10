@@ -19,3 +19,20 @@ export const env = {
   /** "mock" until Phase 5 wires a real vendor behind the same interface. */
   ttsProvider: process.env.TTS_PROVIDER ?? 'mock',
 };
+
+/**
+ * TTS provider config, read FRESH on every call (unlike the static boot
+ * `env` above) so tests can flip providers per test via process.env.
+ * Secrets live here and die here — never logged, never serialized out.
+ */
+export function getTtsConfig() {
+  return {
+    provider: process.env.TTS_PROVIDER ?? 'mock',
+    apiKey: process.env.TTS_API_KEY ?? '',
+    region: process.env.TTS_REGION ?? '',
+    /** Overridable so integration environments can point at a stub endpoint. */
+    baseUrl: process.env.GOOGLE_TTS_BASE_URL ?? 'https://texttospeech.googleapis.com',
+    /** Plan Phase 5: "watch payload size and timeouts (30s)". */
+    timeoutMs: intOr(process.env.TTS_TIMEOUT_MS, 30_000),
+  };
+}

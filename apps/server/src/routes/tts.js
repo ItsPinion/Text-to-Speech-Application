@@ -2,18 +2,19 @@ import { Router, json } from 'express';
 
 import { apiError, AUDIO_FORMAT } from '@tts/shared';
 
+import { getTtsConfig } from '../config/env.js';
 import { findVoice } from '../services/voiceCatalog.js';
 import { synthesize } from '../services/ttsService.js';
 import { validateTtsRequest } from '../validation/tts.js';
 
 /**
- * POST /api/tts — Phase 3: full mock round-trip.
+ * POST /api/tts — full round-trip (Phases 3–5).
  *
  *   content-type guard → JSON body parser → validate → catalog checks →
- *   ttsService.synthesize → 200 audio/mpeg (binary buffer)
+ *   ttsService.synthesize (mock | google, per TTS_PROVIDER) → 200 audio/mpeg
  *
- * Phase 2's 501 is gone: valid requests now stream audio. Validation code
- * was not touched — proof the port/separation holds (plan 3.6).
+ * Provider failures map to the contract: auth/config → vague 500,
+ * timeout/network/vendor errors → 503 "TTS provider unavailable".
  */
 
 /** Reject non-JSON requests before the parser runs (plan test 2.7 → 415). */
@@ -57,17 +58,24 @@ router.post(
         .json(apiError(`Voice "${voice}" does not speak "${language}"`));
     }
 
-    // ── Synthesis (mock today, vendor in Phase 5 — same call) ───────
+    // ── Synthesis (mock or vendor — same call, per TTS_PROVIDER) ────
     try {
       const audio = await synthesize({ text, language, voice });
 
       res.set({
         'Content-Type': AUDIO_FORMAT,
         'Cache-Control': 'no-store',
-        'X-TTS-Provider': 'mock',
+        'X-TTS-Provider': getTtsConfig().provider,
       });
       return res.status(200).send(audio);
     } catch (error) {
+      // Plan Phase 5 error mapping — auth/config issues are OUR fault (500,
+      // deliberately vague: no key, no vendor detail in the response body);
+      // everything else is "provider unavailable" (503).
+      if (error?.kind === 'auth') {
+        console.error('[server] TTS provider auth/config error:', error.message);
+        return res.status(500).json(apiError('Internal server error'));
+      }
       console.error('[server] synthesis failed:', error.message);
       return res.status(503).json(apiError('TTS provider unavailable'));
     }
