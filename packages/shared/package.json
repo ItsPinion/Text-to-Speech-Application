@@ -1,0 +1,15 @@
+{
+  "name": "@tts/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frozen Phase 0 contract: limits, defaults, response envelopes, shared types",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  }
+}

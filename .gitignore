@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+
+# env & secrets — never commit real keys (Phase 0 test 0.2)
+.env
+.env.*
+!.env.example
+
+# turbo cache
+.turbo/
+
+# testing
+coverage/
+*.tsbuildinfo
+
+# misc
+*.log
+.DS_Store
+.vite/
+uploads/

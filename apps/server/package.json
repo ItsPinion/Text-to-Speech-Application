@@ -1,0 +1,25 @@
+{
+  "name": "@tts/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Express API for the TTS platform — Phase 1: skeleton & health",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tts/shared": "workspace:*",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0",
+    "vitest": "^3.2.0"
+  }
+}
