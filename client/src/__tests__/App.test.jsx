@@ -61,6 +61,7 @@ function installFetch({ voices, tts, auth } = {}) {
   const fetchMock = vi.fn(async (url, options) => {
     const method = options?.method ?? 'GET';
     if (url === '/api/voices') return voices ?? jsonRes({ voices: VOICES });
+    if (url === '/api/models') return jsonRes({ mms: { te: false, ta: false } });
     if (url === '/api/contract') return jsonRes(CONTRACT);
     if (url === '/api/health') return jsonRes({ status: 'ok', tts: { provider: 'mock', configured: true } });
     if (url === '/api/tts') return tts ? tts() : audioRes();
@@ -351,4 +352,16 @@ describe('Phase 7 — auth, history, favorites', () => {
     });
   });
 });
+});
+
+// ── Neural voice import panel (browser bridge) ─────────────────────────
+describe('neural voice import panel', () => {
+  it('stays hidden while the provider is not piper (mock mode)', async () => {
+    installFetch();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /generate speech/i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Enable neural Telugu/i)).not.toBeInTheDocument();
+  });
 });

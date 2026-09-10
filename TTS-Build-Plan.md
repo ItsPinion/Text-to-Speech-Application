@@ -504,6 +504,25 @@ Authorization: user A cannot GET/DELETE user B’s ids (**403**).
 
 ---
 
+# PHASE 7.6 — Neural Telugu & Tamil via MMS + browser-bridge import
+
+**Trigger:** user feedback — "tamil, telugu etc still sound wrong… like a broken recorder." English (Piper) was fine; te/ta were the eSpeak fallback, and eSpeak's Indic voices are the harshest of the lot. Diagnosis confirmed the phonemization was CORRECT (te IPA: `nˈamasteː ˈidi tˈeluɡu`) — the quality ceiling is the engine itself.
+
+**Investigation:** every neural te/ta model lives on CDNs this network blocks (HF, release-assets, objects.githubusercontent, media.githubusercontent LFS, ModelScope, Gitee, Kaggle, Zenodo, Codeberg). sherpa's MMS mirror set has only 8 languages (no te/ta). AI4Bharat's Indic-TTS release zips exist on a blocked CDN. Conclusion: no server-side channel exists.
+
+**The trick — the browser bridge:** the *user's* browser has unrestricted internet. New authenticated endpoint pair:
+
+- `GET /api/models` — which optional models are present
+- `POST /api/models/mms/:lang/:file` (lang ∈ te|ta, file ∈ onnx|vocab) — raw-body upload with ONNX header + size-window + vocab-shape validation and a **load-verification** pass (onnxruntime opens the file or it's deleted + 400)
+
+The web app's ModelImportPanel streams `naklitechie/mms-tts-{te,ta}-ONNX` (root `model.onnx` + `vocab.json`, permissive CORS on HF) through the browser and uploads both files once. After that: server-side char-level VITS (HF VitsTokenizer semantics: lowercase → in-vocab chars → blank id 0 interleaved; `input_ids` + `attention_mask`; 16 kHz), per-sentence like Piper, MP3 via the shared encoder. Voices overlay flips te/ta to `engine: 'mms', quality: 'neural'` only when both files exist; until then, eSpeak fallback as before. `MMS_MODELS_DIR` env overrides storage.
+
+**Tests:** +10 server (tokenizer unit, route 401/404/400 paths, both-files semantics, voices overlay with a real ONNX) → 115 passing + 4 auto-skipped; client 17/17 (+1 panel visibility). Live-verified the full import pipeline with a real 63 MB ONNX upload (verified, status flip, overlay, cleanup).
+
+**What it brings:** all 8 catalog languages can be neural; locked-down deployments still work; imports are an explicit, validated, account-gated action.
+
+---
+
 # PHASE 8 — Level 3: Files, AI enhance, customization, admin
 
 **Duration:** 1–2 weeks (stretch)  

@@ -898,3 +898,15 @@ pre {
   margin-top: 0.2rem;
   cursor: pointer;
 }
+
+/* ── Neural model import (browser bridge) ─────────────────────── */
+.model-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.model-import-actions .generate-btn {
+  font-size: 0.85rem;
+  padding: 0.45rem 0.8rem;
+}

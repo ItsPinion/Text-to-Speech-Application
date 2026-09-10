@@ -9,6 +9,7 @@ import ttsRouter from './routes/tts.js';
 import authRouter from './routes/auth.js';
 import historyRouter from './routes/history.js';
 import favoritesRouter from './routes/favorites.js';
+import modelsRouter from './routes/models.js';
 import audioRouter from './routes/audio.js';
 
 /**
@@ -153,6 +154,7 @@ export function createApp({ db } = {}) {
   app.use('/api/auth', authLimiter, authRouter); // limited: brute-force guard
   app.use('/api/history', historyRouter); // authenticated inside the router
   app.use('/api/favorites', favoritesRouter); // authenticated inside the router
+  app.use('/api/models', modelsRouter); // GET status public; import needs auth
   app.use('/api/tts', ttsLimiter, ttsRouter); // limit BEFORE synthesis
 
   // ── JSON 404 (no HTML error pages, ever) ─────────────────────────

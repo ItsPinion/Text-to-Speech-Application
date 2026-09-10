@@ -15,8 +15,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] Phase 7+ — neural voices (Piper). TTS provider: ${provider}${provider === 'piper' ? ' (neural, offline)' : ''}`);
   console.log('[server] Routes: /api/health · /api/contract · /api/voices · /api/audio/:file · /api/auth/* · /api/history · /api/favorites · /api/tts');
   if (provider === 'piper') {
-    const { modelFilesPresent, MODEL_REGISTRY } = piperInternals;
-    const present = Object.values(MODEL_REGISTRY).filter((e) => modelFilesPresent(e.model)).length;
-    console.log(`[server] Piper models: ${present}/${Object.keys(MODEL_REGISTRY).length} voices backed by models on disk (${present === 0 ? 'none — run server/scripts/fetch-piper-models.sh' : 'rest fall back to eSpeak'})`);
+    const { modelFilesPresent, MODEL_REGISTRY, mmsStatus } = piperInternals;
+    const piperVoices = Object.values(MODEL_REGISTRY).filter((e) => e.model);
+    const present = piperVoices.filter((e) => modelFilesPresent(e.model)).length;
+    const mms = mmsStatus();
+    console.log(`[server] Piper models: ${present}/${piperVoices.length} voices backed by models on disk (${present === 0 ? 'none — run server/scripts/fetch-piper-models.sh' : 'rest fall back to eSpeak'})`);
+    console.log(`[server] MMS neural imports — Telugu: ${mms.te ? 'ready ✓' : 'not imported (in-app import or fetch script)'}, Tamil: ${mms.ta ? 'ready ✓' : 'not imported'}`);
   }
 });

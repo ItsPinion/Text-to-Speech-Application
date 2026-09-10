@@ -1,4 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { mkdtempSync, existsSync, copyFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SERVER_ROOT = joinPath(fileURLToPath(new URL('..', import.meta.url)), '');
 import request from 'supertest';
 import { app } from '../src/app.js';
 import { ttsService } from '../src/services/ttsService.js';
@@ -34,6 +40,17 @@ function isMp3(buf) {
 const modelsOnDisk = Object.values(_internals.MODEL_REGISTRY).every((e) =>
   _internals.modelFilesPresent(e.model),
 );
+
+let mmsTempDir = null;
+
+/** Register + log in a user, return the JWT (route tests need auth). */
+const RUN = Date.now().toString(36); // unique per run (dev DB persists)
+
+async function registerAndLogin(creds) {
+  const reg = await request(app).post('/api/auth/register').send(creds);
+  expect(reg.status).toBe(201);
+  return reg.body.token;
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -174,16 +191,25 @@ describe('phoneme → id encoding (pure logic, no models)', () => {
 });
 
 describe('registry ↔ catalog coherence', () => {
-  it('every piper-engine catalog voice has a model, every espeak voice does not', () => {
+  it('every piper-engine catalog voice has a Piper model entry, and vice versa', () => {
     const piperVoices = VOICES.filter((v) => v.engine === 'piper').map((v) => v.id).sort();
-    const registryVoices = Object.keys(_internals.MODEL_REGISTRY).sort();
-    expect(piperVoices).toEqual(registryVoices);
-    for (const v of VOICES.filter((v) => v.engine === 'espeak')) {
-      expect(_internals.MODEL_REGISTRY[v.id]).toBeUndefined();
-    }
+    const registryPiperVoices = Object.entries(_internals.MODEL_REGISTRY)
+      .filter(([, e]) => e.model)
+      .map(([id]) => id)
+      .sort();
+    expect(piperVoices).toEqual(registryPiperVoices);
   });
 
-  it('Telugu and Tamil voices stay on eSpeak (no Piper models exist)', () => {
+  it('Telugu and Tamil map to importable MMS models (char-level VITS)', () => {
+    for (const v of VOICES.filter((v) => ['te-IN', 'ta-IN'].includes(v.language))) {
+      const entry = _internals.MODEL_REGISTRY[v.id];
+      expect(entry?.kind).toBe('mms');
+      expect(['te', 'ta']).toContain(entry.mmsLang);
+    }
+    expect([..._internals.MMS_LANGS].sort()).toEqual(['ta', 'te']);
+  });
+
+  it('the static catalog still lists te/ta as classic until a model is imported (overlay handles the rest)', () => {
     for (const v of VOICES.filter((v) => ['te-IN', 'ta-IN'].includes(v.language))) {
       expect(v.engine).toBe('espeak');
       expect(v.quality).toBe('classic');
@@ -221,6 +247,129 @@ describe('eSpeak fallback (no model files required)', () => {
       warn.mock.calls.some((c) => String(c[0]).includes('eSpeak fallback')),
     ).toBe(true);
   }, 30000);
+});
+
+describe('MMS tokenizer (Telugu/Tamil neural models)', () => {
+  // Shape of an MMS vocab.json: native-script character → small int id.
+  const VOCAB = { '\u0c24': 0, '\u0c32': 4, '\u0c17': 9, '\u0c41': 12, a: 30, '!': 2, ' ': 1 };
+
+  it('interleaves the blank/pad id 0 between every in-vocab character', () => {
+    expect(_internals.tokenizeMms(VOCAB, '\u0c24\u0c32\u0c17\u0c41')).toEqual([0, 0, 0, 4, 0, 9, 0, 12, 0]);
+  });
+
+  it('lowercases and skips out-of-vocab characters (HF VitsTokenizer semantics)', () => {
+    expect(_internals.tokenizeMms(VOCAB, 'A! \u0c17z')).toEqual([0, 30, 0, 2, 0, 1, 0, 9, 0]);
+  });
+
+  it('returns only the blank for text with nothing in-vocab', () => {
+    expect(_internals.tokenizeMms(VOCAB, 'XYZ')).toEqual([0]);
+  });
+});
+
+describe('neural voice import (browser bridge, /api/models)', () => {
+  beforeEach(() => {
+    mmsTempDir = mkdtempSync(joinPath(tmpdir(), 'mms-test-'));
+    vi.stubEnv('MMS_MODELS_DIR', mmsTempDir);
+  });
+
+  it('GET /api/models reports which MMS models are present (public)', async () => {
+    const res = await request(app).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.mms).toEqual({ te: false, ta: false });
+  });
+
+  it('importing without a token → 401', async () => {
+    const res = await request(app)
+      .post('/api/models/mms/te/vocab')
+      .set('Content-Type', 'application/octet-stream')
+      .send('{}');
+    expect(res.status).toBe(401);
+  });
+
+  it('unknown language / file type → 404', async () => {
+    const token = await registerAndLogin({ email: `mms1-${RUN}@example.com`, password: 'mms-pass-123' });
+    const lang = await request(app)
+      .post('/api/models/mms/xx/vocab')
+      .set('Authorization', `Bearer ${token}`)
+      .send('{}');
+    expect(lang.status).toBe(404);
+    const file = await request(app)
+      .post('/api/models/mms/te/weights')
+      .set('Authorization', `Bearer ${token}`)
+      .send('x');
+    expect(file.status).toBe(404);
+  });
+
+  it('a garbage vocab → 400; a valid vocab → 200 and the status flips', async () => {
+    const token = await registerAndLogin({ email: `mms2-${RUN}@example.com`, password: 'mms-pass-123' });
+    const bad = await request(app)
+      .post('/api/models/mms/ta/vocab')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send('not json at all');
+    expect(bad.status).toBe(400);
+
+    const vocab = {};
+    for (let i = 0; i < 40; i++) vocab[`c${i}`] = i; // plausible shape
+    const ok = await request(app)
+      .post('/api/models/mms/ta/vocab')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(JSON.stringify(vocab));
+    expect(ok.status).toBe(200);
+    expect(ok.body.stored).toBe('ta.vocab.json');
+    expect(existsSync(joinPath(mmsTempDir, 'ta.vocab.json'))).toBe(true);
+    // still NOT ready: the .onnx hasn't been imported yet — status only
+    // flips when BOTH files are on disk.
+    expect(ok.body.mms.ta).toBe(false);
+  });
+
+  it('a non-ONNX binary → 400 (magic/size validation), nothing stored', async () => {
+    const token = await registerAndLogin({ email: `mms3-${RUN}@example.com`, password: 'mms-pass-123' });
+    const html = Buffer.from('<html>proxy error page</html>');
+    const res = await request(app)
+      .post('/api/models/mms/te/onnx')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(html);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/ONNX|size/i);
+    expect(existsSync(joinPath(mmsTempDir, 'te.onnx'))).toBe(false);
+  });
+
+  it('voices overlay: GET /api/voices marks te/ta neural once BOTH files exist', async () => {
+    vi.stubEnv('TTS_PROVIDER', 'piper');
+    const before = await request(app).get('/api/voices');
+    const teBefore = before.body.voices.find((v) => v.id === 'te-IN-female-1');
+    expect(teBefore.engine).toBe('espeak'); // not imported yet
+
+    const token = await registerAndLogin({ email: `mms4-${RUN}@example.com`, password: 'mms-pass-123' });
+    const vocab = {};
+    for (let i = 0; i < 40; i++) vocab[`c${i}`] = i;
+    await request(app)
+      .post('/api/models/mms/te/vocab')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(JSON.stringify(vocab));
+
+    // vocab alone is not enough — the overlay flips only with the .onnx
+    // too (existence is what mmsStatus checks; no inference here).
+    const mid = await request(app).get('/api/voices');
+    expect(mid.body.voices.find((v) => v.id === 'te-IN-female-1').engine).toBe('espeak');
+
+    // drop a real ONNX file in place (any valid one — presence is what matters)
+    copyFileSync(
+      joinPath(SERVER_ROOT, '.cache', 'piper-models', 'en_US-amy-medium.onnx'),
+      joinPath(mmsTempDir, 'te.onnx'),
+    );
+
+    const after = await request(app).get('/api/voices');
+    const teAfter = after.body.voices.find((v) => v.id === 'te-IN-female-1');
+    expect(teAfter.engine).toBe('mms');
+    expect(teAfter.quality).toBe('neural');
+    // Tamil untouched
+    expect(after.body.voices.find((v) => v.id === 'ta-IN-female-1').engine).toBe('espeak');
+  });
 });
 
 describe('real neural synthesis (requires downloaded models)', () => {

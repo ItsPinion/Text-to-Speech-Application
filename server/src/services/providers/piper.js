@@ -27,9 +27,12 @@ import { espeakProvider } from './espeak.js';
  * Voice model files (~60 MB each, 9 models covering 6 of our 8 catalog
  * languages) live in `server/.cache/piper-models/` — git-ignored,
  * fetched by `server/scripts/fetch-piper-models.sh`. Telugu and Tamil
- * have no Piper voices; those catalog voices fall back to the eSpeak
- * provider (as does any voice whose model files are missing), so the
- * API never hard-fails just because models haven't been downloaded.
+ * have no Piper voices; they use Meta's MMS VITS models (char-level
+ * tokenizer, 16 kHz, transformers.js-style ONNX export) which live in
+ * `server/.cache/mms-models/` and can be imported through the user's
+ * browser (POST /api/models/mms/:lang) or the fetch script. Any voice
+ * whose model files are missing falls back to the eSpeak provider, so
+ * the API never hard-fails just because models haven't been downloaded.
  *
  * Same interface as every provider:
  *   synthesize({ text, language, voice }) → Promise<Buffer>  // MP3 bytes
@@ -65,7 +68,111 @@ const MODEL_REGISTRY = {
   'es-ES-male-1': { model: 'es_ES-sharvard-medium', speaker: 0 }, // M
   'fr-FR-female-1': { model: 'fr_FR-siwis-medium' },
   'fr-FR-male-1': { model: 'fr_FR-tom-medium' },
+  // Telugu & Tamil: no Piper voices exist anywhere. Meta's MMS VITS models
+  // cover both — but they live on CDNs this deployment may not reach, so
+  // they are IMPORTED at runtime (browser-bridged upload via
+  // POST /api/models/mms/:lang, or fetch-piper-models.sh on open networks).
+  // Until the files arrive these voices fall back to eSpeak.
+  'te-IN-female-1': { kind: 'mms', mmsLang: 'te' },
+  'te-IN-male-1': { kind: 'mms', mmsLang: 'te' },
+  'ta-IN-female-1': { kind: 'mms', mmsLang: 'ta' },
+  'ta-IN-male-1': { kind: 'mms', mmsLang: 'ta' },
 };
+
+/** Languages with an importable MMS neural model (char-level VITS, 16 kHz). */
+export const MMS_LANGS = ['te', 'ta'];
+
+/** Where imported MMS models live: <lang>.onnx + <lang>.vocab.json. */
+export function mmsDir() {
+  return (
+    process.env.MMS_MODELS_DIR ||
+    joinPath(SERVER_ROOT, '.cache', 'mms-models')
+  );
+}
+
+/** True when both MMS files for a language are present. */
+export function mmsModelPresent(lang) {
+  return (
+    existsSync(joinPath(mmsDir(), `${lang}.onnx`)) &&
+    existsSync(joinPath(mmsDir(), `${lang}.vocab.json`))
+  );
+}
+
+/** { te: boolean, ta: boolean } — for GET /api/models + /api/voices overlay. */
+export function mmsStatus() {
+  return Object.fromEntries(MMS_LANGS.map((l) => [l, mmsModelPresent(l)]));
+}
+
+/**
+ * Pure helper (exported for tests): MMS char tokenizer, faithful to the
+ * HF VitsTokenizer for is_uroman:false checkpoints (the algorithm proven
+ * byte-identical to transformers.js in PaulKinlan's MMS workers):
+ * lowercase → keep in-vocab characters → interleave the blank/pad id 0
+ * between every token ([0, id, 0, id, …, 0]).
+ */
+export function tokenizeMms(vocab, text) {
+  const ids = [];
+  for (const ch of String(text ?? '').toLowerCase()) {
+    if (Object.prototype.hasOwnProperty.call(vocab, ch)) {
+      ids.push(vocab[ch]);
+    }
+  }
+  const out = [0]; // blank/pad
+  for (const id of ids) out.push(id, 0);
+  return out;
+}
+
+/** Load (and cache) one MMS model: ONNX session + vocab. */
+async function loadMmsModel(lang) {
+  const key = `mms:${lang}`;
+  if (sessionCache.has(key)) return sessionCache.get(key);
+  const ort = await import('onnxruntime-node');
+  const { readFileSync } = await import('node:fs');
+  const session = await ort.InferenceSession.create(
+    joinPath(mmsDir(), `${lang}.onnx`),
+  );
+  const vocab = JSON.parse(
+    readFileSync(joinPath(mmsDir(), `${lang}.vocab.json`), 'utf8'),
+  );
+  const entry = { kind: 'mms', ort, session, vocab };
+  sessionCache.set(key, entry);
+  return entry;
+}
+
+/** Synthesize text via an imported MMS model → Int16 PCM chunks (16 kHz). */
+async function synthesizeMms(entry, text) {
+  const ort = entry.ort;
+  const chunks = [];
+  for (const sentence of splitSentences(text)) {
+    const ids = tokenizeMms(entry.vocab, sentence);
+    if (ids.length <= 1) continue; // nothing in-vocab for this sentence
+    const n = ids.length;
+    const out = await entry.session.run({
+      input_ids: new ort.Tensor(
+        'int64',
+        BigInt64Array.from(ids.map((v) => BigInt(v))),
+        [1, n],
+      ),
+      attention_mask: new ort.Tensor(
+        'int64',
+        BigInt64Array.from({ length: n }, () => 1n),
+        [1, n],
+      ),
+    });
+    // transformers.js-style VITS export: output "waveform" (16 kHz mono)
+    const wave = out.waveform ?? out[entry.session.outputNames[0]];
+    const audio = wave?.data;
+    if (!audio || audio.length === 0) continue;
+    const pcm = new Int16Array(audio.length);
+    for (let i = 0; i < audio.length; i++) {
+      const s = Math.round(audio[i] * 32767);
+      pcm[i] = s < -32768 ? -32768 : s > 32767 ? 32767 : s;
+    }
+    if (chunks.length > 0) chunks.push(new Int16Array(3200)); // 0.2 s @ 16 kHz
+    chunks.push(pcm);
+  }
+  return chunks;
+}
 
 const voiceById = new Map(VOICES.map((v) => [v.id, v]));
 
@@ -242,13 +349,52 @@ function synthesizeWithEspeakFallback(voiceId, reason, args) {
 async function synthesize({ text, language, voice }) {
   const entry = voice && MODEL_REGISTRY[voice];
 
-  // No neural model for this voice (Telugu/Tamil) or files not fetched
-  // yet — degrade gracefully to the offline eSpeak provider.
+  // No neural model for this voice or files not fetched yet — degrade
+  // gracefully to the offline eSpeak provider.
   if (!entry) {
     return synthesizeWithEspeakFallback(voice, 'no Piper model for this voice', {
       text, language, voice,
     });
   }
+
+  // Telugu/Tamil: the imported MMS neural model when present, eSpeak if not.
+  if (entry.kind === 'mms') {
+    if (!mmsModelPresent(entry.mmsLang)) {
+      return synthesizeWithEspeakFallback(
+        voice,
+        'MMS model not imported yet — use the in-app neural-voice import or server/scripts/fetch-piper-models.sh',
+        { text, language, voice },
+      );
+    }
+    let model;
+    try {
+      model = await loadMmsModel(entry.mmsLang);
+    } catch (err) {
+      throw new ProviderError(`MMS model load failed: ${err?.message ?? err}`, 500);
+    }
+    let pcmChunks;
+    try {
+      pcmChunks = await synthesizeMms(model, text);
+    } catch (err) {
+      throw new ProviderError(`MMS inference failed: ${err?.message ?? err}`, 500);
+    }
+    if (pcmChunks.length === 0) {
+      throw new ProviderError('MMS produced no phonemes for this text');
+    }
+    const total = pcmChunks.reduce((a, c) => a + c.length, 0);
+    const pcmAll = new Int16Array(total);
+    let off = 0;
+    for (const c of pcmChunks) {
+      pcmAll.set(c, off);
+      off += c.length;
+    }
+    const mp3 = encodeMp3FromInt16Pcm(pcmAll, 16000);
+    if (mp3.length === 0) {
+      throw new ProviderError('MP3 encoding produced no bytes');
+    }
+    return mp3;
+  }
+
   if (!modelFilesPresent(entry.model)) {
     return synthesizeWithEspeakFallback(
       voice,
@@ -364,8 +510,13 @@ export const piperProvider = { name: 'piper', synthesize };
 /** Test hooks (no network/model deps): pure logic + registry info. */
 export const _internals = {
   MODEL_REGISTRY,
+  MMS_LANGS,
   modelsDir,
   modelFilesPresent,
+  mmsDir,
+  mmsModelPresent,
+  mmsStatus,
+  tokenizeMms,
   buildPhonemeIds,
   splitSentences,
   clearCaches() {

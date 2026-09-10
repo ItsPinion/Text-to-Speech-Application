@@ -3,7 +3,7 @@
 A full-stack text-to-speech application — **React (Vite)** client, **Node.js + Express** server, and a swappable TTS provider behind a server-side port. API keys never leave the server.
 
 **Current status: ✅ Phase 7 + neural voices — auth, history, favorites & offline human-sounding speech.**
-The full product loop works against the live API: type text (live counts) → pick language & voice from the catalog → **Generate** → play the MP3 in the browser → download it. Speech needs **no credit card and no account**: the default **Piper** provider (`TTS_PROVIDER=piper`) runs **neural VITS voices fully offline** — English (US/GB), Hindi, Spanish and French sound like recorded humans; Telugu & Tamil (no neural models exist yet) and any voice whose model files haven't been fetched fall back to the bundled eSpeak-NG engine automatically. A **Google Cloud TTS** adapter is also wired (`TTS_PROVIDER=google` + key). The frontend needed only a cosmetic change (a ⚡ neural badge): the proof the Phase 3 port was correct.
+The full product loop works against the live API: type text (live counts) → pick language & voice from the catalog → **Generate** → play the MP3 in the browser → download it. Speech needs **no credit card and no account**: the default **Piper** provider (`TTS_PROVIDER=piper`) runs **neural VITS voices fully offline** — English (US/GB), Hindi, Spanish and French sound like recorded humans; Telugu & Tamil use Meta's **MMS** neural models, imported once through your browser (see *Neural voice import* below); until imported (or if a model is missing) those voices fall back to the bundled eSpeak-NG engine automatically. A **Google Cloud TTS** adapter is also wired (`TTS_PROVIDER=google` + key). The frontend needed only a cosmetic change (a ⚡ neural badge): the proof the Phase 3 port was correct.
 Now hardened: **rate limit** (10 generations / IP / 15 min → `429` + `Retry-After`), **CORS allowlist** from `CLIENT_ORIGIN`, and **request-id structured logging** that records text *length* only — never content, never secrets.
 And multi-user: **create an account**, keep a **history** of every generation (replay + download from the server, no re-synthesis), and **★ favorite voices**. Auth is optional — anonymous generation works exactly as before (documented plan choice for 7.7).
 
@@ -14,7 +14,8 @@ And multi-user: **create an account**, keep a **history** of every generation (r
 | **Web app** (`localhost:5173`) | ✅ | text input w/ counts · language/voice selectors · generate (spinner) · `<audio>` player · download · error mapping |
 | `GET /api/health` | ✅ | `200 { "status": "ok" }` |
 | `GET /api/contract` | ✅ | machine-readable frozen contract |
-| `GET /api/voices` | ✅ | 16 voices across 8 languages + `engine`/`quality` per voice + active `provider` |
+| `GET /api/voices` | ✅ | 16 voices across 8 languages + `engine`/`quality` per voice + active `provider` (te/ta flip to `mms`/`neural` once imported) |
+| **Neural voice import** | ✅ | `GET /api/models` status · `POST /api/models/mms/:lang/:file` (auth; ONNX magic + size + shape validation, load-verified) — the browser bridge for models on CDNs the server can't reach |
 | `POST /api/tts` | ✅ | validates → `200 audio/mpeg` (neural Piper speech by default) · `400`/`415` on bad input · `500` on vendor auth failure · `503` on vendor timeout/down |
 | **TTS provider port** | ✅ | `piper` (**neural, offline, free** — default) · `espeak` (classic, all 8 languages) · `mock` (CI-safe) · `google` (neural, needs key) via `TTS_PROVIDER`; keys stay server-side |
 | **Hardening** | ✅ | rate limit `429` + `Retry-After` + `RateLimit-*` · CORS allowlist (no ACAO for foreign origins) · request-id + JSON logs (`textChars` only) |
@@ -40,6 +41,7 @@ Text-to-Speech-Application/
 │   │   │   ├── ErrorMessage.jsx    # 400/429/503/network → human text
 │   │   │   ├── EndpointCard.jsx     # contract renderer
 │   │   │   ├── AuthPanel.jsx        # login / register / logout (Phase 7)
+│   │   │   ├── ModelImportPanel.jsx # ⚡ browser-bridge import of te/ta MMS models
 │   │   │   └── HistoryPanel.jsx     # replay + download + delete (Phase 7)
 │   │   ├── __tests__/App.test.jsx  # RTL — 16 tests (plan 4.1–4.9, 7.7 + extras)
 │   │   └── test/setup.js           # jest-dom matchers + blob-URL stub
@@ -66,7 +68,7 @@ Text-to-Speech-Application/
 │   │   │   ├── piper.js            # neural VITS (Piper models via onnxruntime-node) — offline
 │   │   │   └── google.js           # Google Cloud TTS REST adapter
 │   │   ├── audio/pcmToMp3.js        # PCM → MP3 encoder (lamejs)
-│   │   └── routes/                 # health, voices, tts, auth, history, favorites, audio
+│   │   └── routes/                 # health, voices, tts, auth, history, favorites, audio, models
 │   ├── scripts/fetch-piper-models.sh # one-time download of the 9 neural voice models (~560 MB)
 │   │   ├── .cache/piper-models/      # the .onnx models + configs — git-ignored
 │   └── tests/                      # Vitest + Supertest — 109 tests
@@ -154,6 +156,8 @@ cd server && npm run dev
 # health: { "status": "ok", "tts": { "provider": "piper", "configured": true } }
 ```
 
+**Telugu & Tamil — the browser bridge.** No Piper voices exist for them; Meta's MMS VITS models do but live on Hugging Face, which locked-down servers often can't reach. The web app therefore ships a one-time **"⚡ Enable neural Telugu/Tamil"** import: *your browser* downloads `model.onnx` + `vocab.json` (~150 MB, HF serves permissive CORS) and uploads them to `POST /api/models/mms/:lang/:file`. The server validates (ONNX header, size window, vocab shape) and **load-verifies** the model with onnxruntime before accepting; after that, synthesis is 100% server-side and offline. Inference uses the char-level HF `VitsTokenizer` algorithm (lowercase → in-vocab chars → blank-interleave) feeding `input_ids` + `attention_mask`, 16 kHz output — the same recipe as transformers.js, proven in PaulKinlan's MMS workers.
+
 The pipeline (`providers/piper.js`, a faithful port of Piper's `phonemize.cpp` + `phonemes_to_ids`): text → **sentences** → eSpeak-NG **IPA phonemes** (WASM, using each model's *own* espeak voice) → NFD codepoints + `phoneme_map` → `phoneme_id_map` ids with `^…$` markers and `_` pads → VITS ONNX session per sentence (`input`/`input_lengths`/`scales`/`sid`) → float32 waveform at the model's sample rate → concatenated with 0.2 s sentence pauses → MP3 via the shared lamejs encoder. *(A first cut used espeak's Kirshenbaum notation instead of IPA — the id map is IPA-keyed, so most phonemes were dropped and the output was gibberish; caught from user feedback and fixed by porting piper's algorithm exactly, then verified by decoding every model's id sequence back to IPA.)*
 
 ### Google Cloud TTS (neural) — `TTS_PROVIDER=google`
@@ -176,7 +180,7 @@ For natural voices later: enable "Cloud Text-to-Speech API" in Google Cloud Cons
 
 ## Tests
 
-### Server — `cd server && npm test` (109 passing)
+### Server — `cd server && npm test` (115 passing + 4 auto-skipped)
 
 | Plan ID | Test | Result |
 | --- | --- | --- |
@@ -192,6 +196,7 @@ For natural voices later: enable "Cloud Text-to-Speech API" in Google Cloud Cons
 | + (piper) | registry ↔ catalog coherence: 12 neural voices have models, te/ta stay classic | ✅ |
 | + (piper) | eSpeak fallback: te-IN via piper provider still 200 MP3 (warned); missing model files → fallback too | ✅ |
 | + (piper) | **real VITS** (models on disk): English scales with text · Devanagari Hindi · Spanish male≠female (two-speaker model) · POST /api/tts end-to-end | ✅ *(auto-skip without models)* |
+| + (mms) | char tokenizer (blank-interleave, lowercase, in-vocab only) · import route: 401/404/400-garbage/400-bad-ONNX · status flips only when BOTH files present · voices overlay flips te/ta to `mms`/`neural` | ✅ |
 | 5.4 | wrong key (stubbed vendor 403) → **500**, body contains no key; google without key → 500 | ✅ |
 | 5.5 | vendor timeout stub (AbortError) → **503** "TTS provider unavailable" | ✅ |
 | + | selection (default/mock/google/unknown→mock) · request shape (languageCode + ssmlGender + MP3, key in header only) · vendor 429/500/no-audio → 503 · health reports provider w/o secrets | ✅ |
@@ -212,7 +217,7 @@ For natural voices later: enable "Cloud Text-to-Speech API" in Google Cloud Cons
 | 7.8 | histories isolated per user (automated two-user test + manual) | ✅ |
 | + | register validation (400s) · forged/expired/wrong-secret tokens → 401 · scrypt hashes never store plaintext · favorites idempotent + per-user · owner delete removes file, second delete 404 · path traversal → 404 · anonymous TTS saves nothing | ✅ |
 
-### Client — `cd client && npm test` (16 passing)
+### Client — `cd client && npm test` (17 passing)
 
 | Plan ID | Test | Result |
 | --- | --- | --- |
@@ -295,6 +300,7 @@ Machine-readable source of truth: [`server/src/contract.js`](server/src/contract
 | `PORT` | server | `3000` | Express listen port (Vite proxies `/api` here) |
 | `TTS_PROVIDER` | server | `piper` | `piper` (**neural, offline, free** — default) · `espeak` (classic, all 8 languages) · `mock` (CI-safe) · `google` (neural, needs key) |
 | `PIPER_MODELS_DIR` | server | `server/.cache/piper-models` | where the Piper `.onnx` voice models live (git-ignored; fetched by `server/scripts/fetch-piper-models.sh`) |
+| `MMS_MODELS_DIR` | server | `server/.cache/mms-models` | where the imported Telugu/Tamil MMS models live (git-ignored; imported via the in-app browser bridge) |
 | `TTS_API_KEY` | server | *(blank)* | Google Cloud TTS API key — only used when `TTS_PROVIDER=google`; **server-side only** |
 | `TTS_TIMEOUT_MS` | server | `30000` | vendor call timeout before a 503 |
 | `CLIENT_ORIGIN` | server | `http://localhost:5173` | CORS allowlist — comma-separated origins; others get no CORS headers |

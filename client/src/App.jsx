@@ -23,6 +23,7 @@ import ErrorMessage from './components/ErrorMessage.jsx';
 import EndpointCard from './components/EndpointCard.jsx';
 import AuthPanel from './components/AuthPanel.jsx';
 import HistoryPanel from './components/HistoryPanel.jsx';
+import ModelImportPanel from './components/ModelImportPanel.jsx';
 
 /**
  * Phase 7 — the multi-user product.
@@ -119,6 +120,18 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-fetch the voice catalog (called after a neural model import so the
+  // ⚡ badges and engine overlays update without a reload).
+  function refreshVoices() {
+    getVoices()
+      .then(({ voices: list }) => {
+        setVoices(list);
+        const langs = [...new Set(list.map((v) => v.language))];
+        setLanguage((cur) => (langs.includes(cur) ? cur : (langs[0] ?? cur)));
+      })
+      .catch(() => {});
+  }
 
   // Keep the selected voice valid for the selected language (test 4.4)
   useEffect(() => {
@@ -252,6 +265,8 @@ export default function App() {
       )}
 
       <AuthPanel user={user} onLogin={handleAuth} onLogout={handleLogout} />
+
+      <ModelImportPanel token={token} provider={ttsProvider} onImported={refreshVoices} />
 
       <section className="panel studio" aria-label="Speech studio">
         <div className="panel-head">
