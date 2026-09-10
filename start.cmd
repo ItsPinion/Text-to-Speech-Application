@@ -12,6 +12,14 @@ rem  Stop: Ctrl+C the dev servers, then "docker compose stop indextts"
 rem  (weights stay cached in the docker volume).
 rem ════════════════════════════════════════════════════════════════
 
+where pnpm >nul 2>&1
+if errorlevel 1 (
+  echo pnpm not found. Pick ONE:
+  echo   1^) Zero-Node option:  docker compose up    ^(UI on http://localhost:8080^)
+  echo   2^) Install pnpm:      npm install -g pnpm   ^(or: corepack enable^)
+  exit /b 1
+)
+
 docker info >nul 2>&1
 if errorlevel 1 (
   echo Docker is not running. Start Docker Desktop, or use: pnpm dev
