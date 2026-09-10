@@ -1,15 +1,20 @@
 # ════════════════════════════════════════════════════════════════════
-#  ONE COMMAND, WHOLE STACK:   docker compose up
+#  THE one command — everything, with HOT RELOAD, no local toolchain:
 #
-#    client   → http://localhost:8080   (nginx: SPA + /api proxy)
-#    server   → http://localhost:3000   (Express API, node:sqlite)
+#      docker compose up
+#
+#    client   → http://localhost:5173   (Vite dev server — edit & reload)
+#    server   → http://localhost:3000   (node --watch — edit & restart)
 #    indextts → internal :7861          (local voice cloning, no keys)
 #
-#  First boot of `indextts` downloads ~2-4 GB of model weights into the
-#  `indextts-models` volume — watch it: docker compose logs -f indextts
-#  Syntheses return "unavailable" until that download finishes.
+#  Sources are bind-mounted, so code edits on your machine are picked up
+#  inside the containers instantly. Bun/Node only exist inside Docker.
 #
-#  Sidecar only (for pnpm dev against it): docker compose up indextts
+#  Production-build preview (nginx, port 8080):
+#      docker compose -f docker-compose.prod.yml up --build
+#
+#  First boot of `indextts` downloads ~2-4 GB of model weights into the
+#  `indextts-models` volume — watch: docker compose logs -f indextts
 # ════════════════════════════════════════════════════════════════════
 services:
   indextts:
@@ -51,6 +56,7 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
     container_name: tts-server
+    command: node --watch apps/server/src/server.js
     ports:
       - "3000:3000"
     environment:
@@ -58,10 +64,12 @@ services:
       INDEX_TTS_API_URL: http://indextts:7861
       # Local default — set a real secret for anything exposed!
       JWT_SECRET: ${JWT_SECRET:-change-me-before-any-real-deployment}
-      CLIENT_ORIGIN: http://localhost:8080
+      CLIENT_ORIGIN: http://localhost:5173
       DB_PATH: /data/tts.sqlite
       UPLOADS_DIR: /data/uploads
     volumes:
+      - ./apps/server:/app/apps/server
+      - ./packages/shared:/app/packages/shared
       - server-data:/data
     depends_on:
       - indextts
@@ -71,9 +79,19 @@ services:
     build:
       context: .
       dockerfile: apps/client/Dockerfile
+      target: deps
     container_name: tts-client
+    command: sh -c "cd apps/client && ../../node_modules/.bin/vite --host 0.0.0.0"
     ports:
-      - "8080:80"
+      - "5173:5173"
+    environment:
+      # Inside the compose network the API is "server", not localhost.
+      API_PROXY_TARGET: http://server:3000
+      # File watching across bind mounts (macOS/Windows) needs polling.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./apps/client:/app/apps/client
+      - ./packages/shared:/app/packages/shared
     depends_on:
       - server
     restart: unless-stopped

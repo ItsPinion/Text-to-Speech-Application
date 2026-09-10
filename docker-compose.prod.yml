@@ -1,0 +1,54 @@
+# Production-build preview — the "how it ships" stack (nginx serves the
+# compiled SPA and proxies /api). No bind mounts, no hot reload.
+#
+#   docker compose -f docker-compose.prod.yml up --build
+#
+#   client → http://localhost:8080
+#
+# For everyday development use `docker compose up` (hot reload, port 5173).
+services:
+  indextts:
+    build: ./sidecar
+    container_name: tts-indextts-prod
+    environment:
+      INDEX_TTS_MODEL_DIR: /models/checkpoints
+      INDEX_TTS_REFS_DIR: /models/refs
+      HF_HOME: /models/hf
+    volumes:
+      - indextts-models:/models
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: tts-server-prod
+    ports:
+      - "3000:3000"
+    environment:
+      TTS_PROVIDER: indextts
+      INDEX_TTS_API_URL: http://indextts:7861
+      JWT_SECRET: ${JWT_SECRET:-change-me-before-any-real-deployment}
+      CLIENT_ORIGIN: http://localhost:8080
+      DB_PATH: /data/tts.sqlite
+      UPLOADS_DIR: /data/uploads
+    volumes:
+      - server-data:/data
+    depends_on:
+      - indextts
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
+    container_name: tts-client-prod
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  indextts-models:
+  server-data:

@@ -1,20 +1,25 @@
-# TTS UI — build with Vite, serve with nginx, proxy /api to the API container.
-FROM node:22-alpine AS build
+# TTS UI — bun installs, Vite builds, nginx serves. The `deps` stage is the
+# reusable base: the dev compose file targets it directly to run the Vite
+# dev server (hot reload) against bind-mounted sources.
+FROM node:22-alpine AS deps
 
-RUN corepack enable
+RUN npm install -g bun@1
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY package.json bun.lock turbo.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/client/package.json apps/client/
-RUN pnpm install --frozen-lockfile --filter @tts/shared --filter @tts/client
+COPY apps/server/package.json apps/server/
+RUN bun install --frozen-lockfile
+
+FROM deps AS build
 
 COPY packages/shared packages/shared
 COPY apps/client apps/client
 
 # Relative /api paths (VITE_API_URL stays empty) — nginx proxies same-origin.
-RUN pnpm --filter @tts/client build
+RUN bun --cwd apps/client run build
 
 FROM nginx:1.27-alpine
 

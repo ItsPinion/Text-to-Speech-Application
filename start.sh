@@ -1,85 +1,50 @@
 #!/usr/bin/env bash
 # ════════════════════════════════════════════════════════════════════
-#  ONE SCRIPT, EVERYTHING:
+#  LOCAL (bun) dev loop:
 #    1. docker compose up  → IndexTTS sidecar (voice engine, detached)
 #    2. API + webserver start immediately, in parallel (hot reload)
 #
 #    UI → http://localhost:5173        API → http://localhost:3000
 #
-#  Speech works as soon as the sidecar finishes preparing — first boot
-#  downloads ~2-4 GB of model weights (watch: docker compose logs -f
-#  indextts). The UI/API are usable immediately; syntheses answer
-#  "unavailable" until then.
-#
-#  Ctrl+C stops the API + webserver AND the sidecar (weights stay
-#  cached in the docker volume → next start is instant).
-#
-#  No Node/pnpm at all? → docker compose up   (whole stack in containers,
-#  UI on :8080) — this script needs Node + pnpm for the hot-reload dev
-#  servers.
+#  DON'T WANT TO INSTALL ANYTHING? → docker compose up
+#  (the whole stack — with hot reload — runs inside Docker; this script
+#  is for developing with bun on the host.)
 # ════════════════════════════════════════════════════════════════════
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# ── Prerequisite 1: pnpm (checked BEFORE touching docker) ──────────
-# Non-interactive scripts don't source .bashrc/.zshrc, so pnpm installed
-# via nvm/volta/asdf is often invisible here — search the usual homes.
-find_pnpm() {
-  if command -v pnpm >/dev/null 2>&1; then return 0; fi
-  for dir in \
-    "$HOME"/.nvm/versions/node/*/bin \
-    "$HOME/.volta/bin" \
-    "$HOME/.local/bin" \
-    "$HOME/.asdf/shims" \
-    "$HOME/.bun/bin" \
-    /usr/local/bin; do
-    if [ -x "$dir/pnpm" ]; then
-      export PATH="$dir:$PATH"
-      return 0
-    fi
-  done
+# ── Prerequisite 1: bun ─────────────────────────────────────────────
+find_bun() {
+  if command -v bun >/dev/null 2>&1; then return 0; fi
+  # Bun installs to ~/.bun/bin by default; scripts may not have it on PATH.
+  if [ -x "$HOME/.bun/bin/bun" ]; then
+    export PATH="$HOME/.bun/bin:$PATH"
+    return 0
+  fi
   return 1
 }
 
-# Node ships corepack, which can provide pnpm without a global install.
-ensure_pnpm() {
-  if find_pnpm; then return 0; fi
-
-  if command -v corepack >/dev/null 2>&1; then
-    echo "▶ pnpm not on PATH — enabling via corepack (ships with Node)…"
-    corepack enable >/dev/null 2>&1 || true
-    if find_pnpm; then
-      echo "  pnpm ready: $(command -v pnpm)"
-      return 0
-    fi
-  fi
-
+echo "▶ checking prerequisites…"
+if ! find_bun; then
   cat >&2 <<'EOF'
-✗ pnpm is not available (needed to run the dev servers).
+✗ bun is not installed (this script develops on the host with bun).
 
   Pick ONE:
-  ① Zero-Node option — run the whole stack in Docker instead:
-       docker compose up            # UI on http://localhost:8080
+  ① Zero-install option — run the whole stack in Docker (hot reload too):
+       docker compose up            # UI on http://localhost:5173
 
-  ② Install pnpm, then rerun ./start.sh:
-       npm install -g pnpm          # (or: corepack enable)
-
-  ③ If pnpm IS installed via nvm/volta/asdf, open it in a normal
-     terminal first — or point PATH at it manually.
+  ② Install bun (single binary, no Node needed), then rerun ./start.sh:
+       curl -fsSL https://bun.sh/install | bash
 EOF
   exit 1
-}
-
-echo "▶ checking prerequisites…"
-ensure_pnpm
-echo "  node:  $(command -v node) ($(node --version))"
-echo "  pnpm:  $(command -v pnpm) ($(pnpm --version))"
+fi
+echo "  bun:   $(command -v bun) ($(bun --version))"
 
 # ── Prerequisite 2: Docker (sidecar engine) ─────────────────────────
 if ! docker info >/dev/null 2>&1; then
   echo "✗ Docker is not running." >&2
   echo "  • Start Docker Desktop / Engine and retry, or" >&2
-  echo "  • skip real speech for now:  pnpm dev   (mock voices, no Docker)" >&2
+  echo "  • mock voices without Docker:  bun run dev" >&2
   exit 1
 fi
 
@@ -90,7 +55,7 @@ docker compose up -d indextts
 # ── 1.5: first run only — install workspace dependencies ────────────
 if [ ! -d node_modules ]; then
   echo "▶ installing workspace dependencies (first run only)…"
-  pnpm install
+  bun install
 fi
 
 # ── 2: API + webserver at the same time, wired to the sidecar ───────
@@ -127,6 +92,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-pnpm dev &
+bun run dev &
 CHILD=$!
 wait "$CHILD"

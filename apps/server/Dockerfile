@@ -1,18 +1,19 @@
-# TTS API — Express + node:sqlite, from the pnpm workspace.
-# (Plain HTTP API container; the UI container proxies /api to it.)
+# TTS API — Express + node:sqlite. Bun installs dependencies (fast, from
+# bun.lock); Node 22 runs the server (node:sqlite is a Node built-in).
 FROM node:22-alpine
 
-RUN corepack enable
+RUN npm install -g bun@1
 
 WORKDIR /app
 
-# Manifests first for Docker layer caching, then a filtered workspace install.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+# Manifests first for Docker layer caching, then one workspace install.
+COPY package.json bun.lock turbo.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
-RUN pnpm install --frozen-lockfile --filter @tts/shared --filter @tts/server
+COPY apps/client/package.json apps/client/
+RUN bun install --frozen-lockfile --production
 
-# Sources (fixtures + scripts ship with the server package).
+# Sources (fixtures ship with the server package).
 COPY packages/shared packages/shared
 COPY apps/server apps/server
 
@@ -25,5 +26,4 @@ ENV NODE_ENV=production \
 VOLUME ["/data"]
 EXPOSE 3000
 
-# node:sqlite is built into Node 22 — no native deps, no build toolchain.
 CMD ["node", "apps/server/src/server.js"]

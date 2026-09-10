@@ -20,7 +20,7 @@ Express API. **Rule #1: API keys never leave the server.**
 
 ## Stack
 
-- **Monorepo:** Turborepo + pnpm workspaces
+- **Monorepo:** Turborepo + Bun workspaces (Bun installs & runs; Node 22 runs the server)
 - **API:** Node 20+, Express 5 (ESM), helmet, cors — Vitest + Supertest
 - **UI:** React 19, Vite 7, TypeScript, Tailwind CSS 4 — Vitest + React Testing Library
 - **Shared:** `@tts/shared` — the frozen contract (limits, envelopes, types) used by *both* apps
@@ -64,41 +64,48 @@ The build plan's `client/` + `server/` map to `apps/*` (Turborepo convention):
 └── TTS-Build-Plan.md           # the phase-by-phase source of truth
 ```
 
-## Quickstart — one command, whole stack
+## Quickstart — docker is all you need
 
-| Command | UI | API | Speech | Needs |
-| --- | --- | --- | --- | --- |
-| **`docker compose up`** | http://localhost:8080 | http://localhost:3000 | **IndexTTS — real, local** | Docker |
-| **`pnpm start`** *(or `./start.sh`)* | http://localhost:5173 | http://localhost:3000 | **IndexTTS — real, local** | Docker + Node/pnpm |
-| `pnpm dev` | http://localhost:5173 | http://localhost:3000 | mock fixtures (instant) | Node ≥ 20 + pnpm ≥ 9 |
+**Zero local toolchain. One command. Hot reload included:**
 
-**`docker compose up`** starts all three containers — UI (nginx), API, and the
-IndexTTS sidecar, wired together (`client → server → indextts` inside the
-compose network). The sidecar's first boot downloads ~2–4 GB of model weights
-into a persistent volume; watch progress with `docker compose logs -f indextts`
-(syntheses answer "unavailable" until that finishes, everything else works).
+```bash
+docker compose up
+```
 
-**`pnpm start`** (`./start.sh`, Windows: `start.cmd`) does it in two moves:
-`docker compose up -d indextts`, then the API + webserver start **immediately,
-in parallel**, with `TTS_PROVIDER=indextts` pre-wired — no waiting. The apps
-are usable right away; speech starts working once the sidecar finishes
-preparing (first boot downloads ~2–4 GB; `docker compose logs -f indextts`).
-Ctrl+C stops the apps **and** the sidecar (weights stay cached, next start is
-instant). No Docker? It exits pointing at `pnpm dev`.
+| URL | What |
+| --- | --- |
+| http://localhost:5173 | **UI** (Vite dev server — edit code, browser reloads) |
+| http://localhost:3000 | **API** (`node --watch` — edit code, server restarts) |
+| internal :7861 | **IndexTTS** voice engine (first boot downloads ~2–4 GB of weights — `docker compose logs -f indextts`) |
 
-**`pnpm dev`** is the zero-setup loop: UI + API with mock fixtures — the whole
-product works (validation, history*, favorites*), just with beeps instead of
-speech. *(history/favorites need a signed-in account — create one in SYS://ACCESS.)*
+Sources are bind-mounted, so Bun/Node/Everything runs inside Docker while you
+edit on your machine. Production-build preview (nginx on :8080):
+`docker compose -f docker-compose.prod.yml up --build`.
+
+### Local development with bun (optional)
+
+Prefer running on the host with bun?
+
+```bash
+curl -fsSL https://bun.sh/install | bash   # single binary, no Node needed
+bun install
+bun run start        # ./start.sh — sidecar via docker + API/UI in parallel
+# or without Docker at all (mock voices): bun run dev
+```
 
 Other commands:
 
 ```bash
-pnpm install    # once, after cloning (skipped by the docker path)
-pnpm build      # type-check + build every app
-pnpm test       # 86 server + 13 client tests
-pnpm dev:server # API only · pnpm dev:client — UI only
-pnpm --filter @tts/server generate:fixtures    # regenerate mock MP3s (pure JS, no ffmpeg)
+bun run test     # 86 server + 13 client tests
+bun run build    # type-check + build every app
+bun run fixtures # regenerate the mock-provider MP3s (pure JS, no ffmpeg)
+bun run dev:server / dev:client   # one app only
 ```
+
+> **Why bun?** It replaced pnpm as the package manager + script runner
+> (single static binary — no version-manager PATH pain). Node 22 remains the
+> server runtime: `node:sqlite` is a Node built-in, and all packages run
+> unchanged.
 
 ## Locked decisions (Phase 0 — no TBDs)
 
@@ -252,7 +259,7 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 ## Tests
 
 ```bash
-pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
+bun run test       # everything (CI runs this with TTS_PROVIDER=mock)
 ```
 
 **Status: Phase 0–7 verified 2026-09-10 — 73 server + 13 client green (3 vendor

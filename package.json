@@ -2,8 +2,17 @@
   "name": "text-to-speech",
   "version": "0.1.0",
   "private": true,
-  "description": "TTS://TERMINAL \u2014 text-to-speech platform (Turborepo: Express API + React UI)",
-  "packageManager": "pnpm@10.34.5",
+  "description": "TTS://TERMINAL — text-to-speech platform (monorepo: Express API + React UI, bun-managed)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "^1.4.2"
+    }
+  },
   "engines": {
     "node": ">=20"
   },
@@ -13,7 +22,8 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "dev:server": "turbo run dev --filter=@tts/server",
-    "dev:client": "turbo run dev --filter=@tts/client"
+    "dev:client": "turbo run dev --filter=@tts/client",
+    "fixtures": "bun --cwd apps/server run generate:fixtures"
   },
   "devDependencies": {
     "turbo": "^2.5.0"
