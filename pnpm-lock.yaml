@@ -84,6 +84,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@breezystack/lamejs':
+        specifier: ^1.2.7
+        version: 1.2.7
       '@tts/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -106,9 +109,6 @@ importers:
         specifier: ^9.0.3
         version: 9.0.3
     devDependencies:
-      '@breezystack/lamejs':
-        specifier: ^1.2.7
-        version: 1.2.7
       supertest:
         specifier: ^7.1.0
         version: 7.2.2

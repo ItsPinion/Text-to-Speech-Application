@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 import { getTtsConfig } from '../config/env.js';
 import { googleTts } from './providers/googleTts.js';
+import { indexTts } from './providers/indexTts.js';
 import { findVoice } from './voiceCatalog.js';
 
 /**
@@ -66,6 +67,9 @@ export function synthesize(request) {
       return mockSynthesize(request);
     case 'google':
       return googleTts(request);
+    case 'indextts':
+      // Local IndexTTS-2/2.5 sidecar — free, no key, no credit card.
+      return indexTts(request);
     default:
       return Promise.reject(new Error('TTS provider unavailable'));
   }

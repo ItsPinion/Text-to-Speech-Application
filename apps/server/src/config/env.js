@@ -74,5 +74,9 @@ export function getTtsConfig() {
     baseUrl: process.env.GOOGLE_TTS_BASE_URL ?? 'https://texttospeech.googleapis.com',
     /** Plan Phase 5: "watch payload size and timeouts (30s)". */
     timeoutMs: intOr(process.env.TTS_TIMEOUT_MS, 30_000),
+    /** IndexTTS sidecar (local, free — see sidecar/README.md). */
+    indexTtsUrl: (process.env.INDEX_TTS_API_URL ?? 'http://127.0.0.1:7861').replace(/\/+$/, ''),
+    /** Local synthesis is slow on CPU — 2 min default, tunable. */
+    indexTtsTimeoutMs: intOr(process.env.INDEX_TTS_TIMEOUT_MS, 120_000),
   };
 }

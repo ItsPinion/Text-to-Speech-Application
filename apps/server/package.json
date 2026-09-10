@@ -13,6 +13,7 @@
     "generate:fixtures": "node scripts/generate-fixtures.mjs"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@tts/shared": "workspace:*",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -22,7 +23,6 @@
     "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
-    "@breezystack/lamejs": "^1.2.7",
     "supertest": "^7.1.0",
     "vitest": "^3.2.0"
   }

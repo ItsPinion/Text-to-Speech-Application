@@ -1,0 +1,32 @@
+# IndexTTS sidecar (voice synthesis) + the TTS platform, wired together.
+#
+#   docker compose up indextts     # first boot downloads ~2-4 GB of weights
+#   # then run the platform with:  TTS_PROVIDER=indextts pnpm dev
+#
+# The Express provider (TTS_PROVIDER=indextts) calls this sidecar at
+# INDEX_TTS_API_URL. No API key, no credit card — everything runs locally.
+services:
+  indextts:
+    build: ./sidecar
+    container_name: tts-indextts
+    ports:
+      - "7861:7861"
+    environment:
+      INDEX_TTS_MODEL_DIR: /models/checkpoints
+      INDEX_TTS_REFS_DIR: /models/refs
+      HF_HOME: /models/hf
+    volumes:
+      - indextts-models:/models
+    restart: unless-stopped
+    # ── NVIDIA GPU (optional, much faster) ──────────────────────────
+    # Requires NVIDIA Container Toolkit; uncomment below:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  indextts-models:

@@ -180,39 +180,45 @@ voice must exist in the catalog · voice must speak the requested language ·
 The mock provider streams a per-voice fixture MP3 (~1 s pitched dual-beep —
 speakers are audibly distinct).
 
-### Provider selection (Phase 5)
+### Provider selection (Phase 5+)
 
 `TTS_PROVIDER` picks the implementation behind the **same** `synthesize()`
 interface — the route, contract, and UI do not change:
 
-| `TTS_PROVIDER` | Behavior | Needs a key? |
-| --- | --- | --- |
-| `mock` *(default)* | Per-voice fixture MP3s | No — CI runs this |
-| `google` | Google Cloud TTS (`Neural2` voices), MP3 out | Yes — `TTS_API_KEY` |
+| `TTS_PROVIDER` | Behavior | Needs a key? | Needs internet? |
+| --- | --- | --- | --- |
+| `mock` *(default)* | Per-voice fixture MP3s | No | No |
+| **`indextts`** ⭐ | **Real cloned speech via a local [IndexTTS-2.5](https://github.com/index-tts/index-tts) sidecar** — open source, runs on your machine (CPU works, NVIDIA GPU is fast) | **No key, no credit card** | No (after first model download) |
+| `google` | Google Cloud TTS (`Neural2` voices) | Yes — requires a billing account | Yes |
+
+**Recommended for local use: `indextts`.** One command starts it:
+
+```bash
+docker compose up indextts   # first boot downloads ~2-4 GB of model weights
+```
+
+Then in `apps/server/.env`:
+
+```bash
+TTS_PROVIDER=indextts
+INDEX_TTS_API_URL=http://127.0.0.1:7861
+INDEX_TTS_TIMEOUT_MS=120000   # CPU synthesis is slow; GPU is fast
+```
+
+See [`sidecar/README.md`](./sidecar/README.md) for the manual (non-Docker)
+setup and how to clone your own voice into any catalog slot (drop a WAV into
+the refs dir). Language coverage: ZH/EN/JA/ES/AR officially; our hi-IN/fr-FR/
+de-DE entries use the model's cross-lingual mode (unofficial quality).
 
 Google error mapping (plan Phase 5): missing/invalid key (**401/403**) → vague
 **500** "Internal server error" — the key and vendor message never reach the
 client; timeout (default 30 s, `TTS_TIMEOUT_MS`) / network / vendor errors →
 **503** "TTS provider unavailable". Voice ids map to Google names in
-`src/services/providers/googleTts.js` (e.g. `en-US-female-1` → `en-US-Neural2-F`).
+`src/services/providers/googleTts.js`.
 
-To use real speech locally:
-
-```bash
-cp .env.example apps/server/.env
-# edit apps/server/.env: TTS_PROVIDER=google, TTS_API_KEY=<your key>
-pnpm dev
-```
-
-Real-key integration tests (plan 5.2/5.3/5.7) run only when a key is present:
-
-```bash
-TTS_PROVIDER=google TTS_API_KEY=<your key> TTS_API_KEY_REAL=1 \
-  pnpm --filter @tts/server test
-```
-
-To verify the key never leaks (plan 5.6): `grep -r TTS_API_KEY apps/client/` →
-zero matches in source and bundle.
+IndexTTS error mapping: sidecar unreachable / timeout (default 120 s) /
+sidecar errors → **503** "TTS provider unavailable"; its WAV output is
+converted to contract MP3 in pure JS (`@breezystack/lamejs` — no ffmpeg).
 
 ## Environment variables
 
@@ -231,6 +237,8 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 | `JWT_SECRET` | *(dev fallback + warning)* | server | **Required in production** — signs login tokens (Phase 7) |
 | `DB_PATH` | `apps/server/data/tts.sqlite` | server | SQLite file; `:memory:` for tests (Phase 7) |
 | `UPLOADS_DIR` | `apps/server/data/uploads` | server | Generated-audio storage for history replay (Phase 7) |
+| `INDEX_TTS_API_URL` | `http://127.0.0.1:7861` | server | Local IndexTTS sidecar URL (`docker compose up indextts`) |
+| `INDEX_TTS_TIMEOUT_MS` | `120000` | server | Local synthesis timeout (CPU is slow; GPU is fast) |
 | `VITE_API_URL` | *(blank)* | client | Empty in dev (Vite proxy); absolute API origin in prod (Phase 9) |
 
 ## Tests
@@ -343,8 +351,8 @@ targets, `prefers-reduced-motion` support.
 ## Roadmap
 
 See [`TTS-Build-Plan.md`](./TTS-Build-Plan.md) for the full phase-by-phase plan.
-**Phases 0–7 complete: Level 1 + hardening + Level 2 accounts** — mock by
-default, one env var from real Google speech, rate-limited, CORS-locked,
-privacy-logged, with per-user history and favorites. Remaining (Phase 8/9):
-advanced slices (speed/pitch sliders, file upload, AI enhance, cloud storage)
-and deployment.
+**Phases 0–7 complete: Level 1 + hardening + Level 2 accounts.** Real speech,
+free and local, via the IndexTTS sidecar (`docker compose up indextts` — no
+key, no credit card). Rate-limited, CORS-locked, privacy-logged, with per-user
+history and favorites. Remaining (Phase 8/9): advanced slices (speed/pitch
+sliders, file upload, AI enhance, cloud storage) and deployment.
