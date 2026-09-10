@@ -1,5 +1,9 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
+
+// Always load apps/server/.env — pinned to this file's location so the
+// server finds its env no matter which directory it was started from.
+dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 
 const intOr = (value, fallback) => {
   const parsed = Number.parseInt(value ?? '', 10);
