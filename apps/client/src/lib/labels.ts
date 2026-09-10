@@ -28,3 +28,22 @@ const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1
 export function formatVoice(voice: Voice): string {
   return `${voice.name} — ${capitalize(voice.gender)} Voice`
 }
+
+/**
+ * Voice id → full-form label without a catalog lookup (history rows store
+ * the raw id). Importing the server catalog is impossible client-side, so
+ * the known map lives here; unknown ids fall back to themselves.
+ */
+const voiceLabels = new Map<string, string>([
+  ['en-US-female-1', 'Aria — Female Voice'],
+  ['en-US-male-1', 'Marcus — Male Voice'],
+  ['en-GB-female-1', 'Iris — Female Voice'],
+  ['hi-IN-female-1', 'Priya — Female Voice'],
+  ['es-ES-male-1', 'Javier — Male Voice'],
+  ['fr-FR-female-1', 'Céline — Female Voice'],
+  ['de-DE-male-1', 'Klaus — Male Voice'],
+])
+
+export function findVoiceLabel(voiceId: string): string {
+  return voiceLabels.get(voiceId) ?? voiceId
+}

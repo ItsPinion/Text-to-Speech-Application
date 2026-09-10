@@ -3,7 +3,10 @@ import type { ReactNode } from 'react'
 
 import { Backdrop } from '@/components/system/Backdrop'
 import { CrtOverlay } from '@/components/system/CrtOverlay'
+import { AuthPanel } from '@/components/tts/AuthPanel'
+import { HistoryPanel } from '@/components/tts/HistoryPanel'
 import { TtsStudio } from '@/components/tts/TtsStudio'
+import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/Card'
@@ -82,6 +85,7 @@ function ReadoutRow({ label, value }: { label: string; value: ReactNode }) {
 export default function App() {
   const health = useApiHealth()
   const voices = useVoices()
+  const auth = useAuth()
   const isOnline = health.status === 'online'
 
   return (
@@ -98,7 +102,18 @@ export default function App() {
           <span className="text-magenta text-glow-magenta">TERMINAL</span>
         </a>
         <div className="flex items-center gap-3">
-          <Badge variant="muted">PHASE 0–6 · LEVEL 1+</Badge>
+          {auth.user ? (
+            <Badge variant="cyan">
+              <StatusDot tone="cyan" />
+              {auth.user.email}
+            </Badge>
+          ) : (
+            <Badge variant="muted">
+              <StatusDot tone="sunset" pulse={false} />
+              GUEST
+            </Badge>
+          )}
+          <Badge variant="muted">PHASE 0–7 · LEVEL 2</Badge>
           <Badge variant={STATUS_TONE[health.status]}>
             <StatusDot tone={STATUS_TONE[health.status]} pulse={health.status !== 'checking'} />
             API {STATUS_LABEL[health.status]}
@@ -139,7 +154,7 @@ export default function App() {
               SYSTEM STATUS
             </Button>
             <Button
-              variant="ghost"
+              variant="outline"
               size="lg"
               onClick={() => document.getElementById('contract')?.scrollIntoView({ behavior: 'smooth' })}
             >
@@ -155,6 +170,18 @@ export default function App() {
         {/* ── Synth bay — the product (Phase 4) ────────────────── */}
         <section id="studio" aria-label="Synth bay" className="scroll-mt-6 pb-16 sm:pb-20">
           <TtsStudio />
+        </section>
+
+        {/* ── Access + archive (Phase 7) ───────────────────────── */}
+        <section
+          id="account"
+          aria-label="Account and archive"
+          className="scroll-mt-6 pb-16 sm:pb-20"
+        >
+          <div className="grid gap-8 lg:grid-cols-2">
+            <AuthPanel auth={auth} />
+            <HistoryPanel auth={auth} />
+          </div>
         </section>
 
         {/* ── Live status + frozen spec ────────────────────────── */}

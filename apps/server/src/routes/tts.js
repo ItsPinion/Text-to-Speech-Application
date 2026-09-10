@@ -1,9 +1,16 @@
+import { mkdirSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { Router, json } from 'express';
 
 import { apiError, AUDIO_FORMAT } from '@tts/shared';
 
-import { getTtsConfig } from '../config/env.js';
+import { env, getTtsConfig } from '../config/env.js';
+import { getDb } from '../db/index.js';
 import { ttsRateLimit } from '../middleware/rateLimit.js';
+import { optionalAuth } from '../middleware/auth.js';
+import { newId } from '../services/authService.js';
 import { findVoice } from '../services/voiceCatalog.js';
 import { synthesize } from '../services/ttsService.js';
 import { validateTtsRequest } from '../validation/tts.js';
@@ -42,6 +49,9 @@ export function createTtsRouter({ rateLimit = true } = {}) {
     // are cut off by the parser (413) before validation.
     json({ limit: '64kb' }),
     ...(rateLimit ? [ttsRateLimit] : []),
+    // Phase 7 (documented plan-7.7 choice): auth is OPTIONAL — anonymous
+    // generation works; a valid token records the generation in history.
+    optionalAuth,
     async (req, res) => {
       const result = validateTtsRequest(req.body);
 
@@ -69,6 +79,11 @@ export function createTtsRouter({ rateLimit = true } = {}) {
       try {
         const audio = await synthesize({ text, language, voice });
 
+        // ── History persistence (Phase 7, logged-in users only) ──────
+        if (req.user) {
+          await persistGeneration(req.user.id, { text, language, voice }, audio);
+        }
+
         res.set({
           'Content-Type': AUDIO_FORMAT,
           'Cache-Control': 'no-store',
@@ -95,4 +110,33 @@ export function createTtsRouter({ rateLimit = true } = {}) {
   );
 
   return router;
+}
+
+/**
+ * Writes the MP3 into UPLOADS_DIR and records the generation row.
+ * Best-effort: a persistence failure logs but never fails the audio
+ * response the user already paid quota for.
+ */
+async function persistGeneration(userId, { text, language, voice }, audio) {
+  const fileName = `${newId()}.mp3`;
+  try {
+    mkdirSync(env.uploadsDir, { recursive: true });
+    await writeFile(join(env.uploadsDir, fileName), audio);
+    getDb()
+      .prepare(
+        `INSERT INTO generations (id, user_id, text, language, voice, audio_url, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        newId(),
+        userId,
+        text,
+        language,
+        voice,
+        `/api/audio/${fileName}`,
+        new Date().toISOString(),
+      );
+  } catch (error) {
+    console.error(`[server] history persistence failed user_id=${userId}:`, error.message);
+  }
 }

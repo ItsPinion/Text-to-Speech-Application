@@ -34,7 +34,9 @@ export function AudioPlayer({ url, sizeBytes, voice }: AudioPlayerProps) {
         download="speech.mp3"
         className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-4')}
       >
-        <span aria-hidden="true">⬇</span> DOWNLOAD MP3
+        <span className="inline-block skew-x-12 transition-transform duration-200 ease-linear group-hover:skew-x-0">
+          <span aria-hidden="true">⬇</span> DOWNLOAD MP3
+        </span>
       </a>
     </section>
   )

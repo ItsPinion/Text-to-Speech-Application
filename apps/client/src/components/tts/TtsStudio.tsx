@@ -82,6 +82,8 @@ export function TtsStudio() {
     try {
       const blob = await generateSpeech({ text: text.trim(), language, voice })
       setAudio({ url: URL.createObjectURL(blob), sizeBytes: blob.size })
+      // Phase 7: let SYS://ARCHIVE refresh without prop drilling.
+      window.dispatchEvent(new Event('tts:generated'))
     } catch (err) {
       setError(
         err instanceof ApiError ? err : new ApiError('Unexpected error', null),

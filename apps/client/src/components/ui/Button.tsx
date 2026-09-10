@@ -21,9 +21,12 @@ const buttonVariants = cva(
         // Solid magenta → un-skews, scales, dims, glows.
         secondary:
           'group -skew-x-12 border-2 border-magenta bg-magenta text-white hover:skew-x-0 hover:scale-105 hover:opacity-80 hover:shadow-glow-magenta',
-        // Magenta outline → fills on hover.
+        // Magenta outline → fills on hover. Skewed to match the family:
+        // any bordered button reads as a "neon plate", so mixing skewed and
+        // straight plates in one row looks broken.
         outline:
-          'border-2 border-magenta bg-transparent text-magenta hover:bg-magenta hover:text-white hover:shadow-glow-magenta-sm',
+          'group -skew-x-12 border-2 border-magenta bg-transparent text-magenta hover:skew-x-0 hover:bg-magenta hover:text-white hover:shadow-glow-magenta-sm',
+        // Quiet tertiary — inline actions only (Clear, Retry), never hero rows.
         ghost: 'text-chrome hover:bg-cyan/10 hover:text-cyan',
       },
       size: {
@@ -51,7 +54,7 @@ export function Button({
   type = 'button',
   ...props
 }: ButtonProps) {
-  const isSkewed = variant === 'primary' || variant === 'secondary'
+  const isSkewed = variant !== 'ghost'
 
   return (
     <button

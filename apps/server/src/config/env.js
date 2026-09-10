@@ -1,9 +1,13 @@
 import 'dotenv/config';
+import { fileURLToPath } from 'node:url';
 
 const intOr = (value, fallback) => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+/** apps/server/ — anchors the default data paths. */
+const serverRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 /**
  * Phase 6 CORS allow-list: CLIENT_ORIGIN accepts a comma-separated list of
@@ -20,6 +24,17 @@ if (clientOrigins.length === 0) {
   clientOrigins.push('http://localhost:5173');
 }
 
+/** Phase 7: JWT signing secret. A dev fallback exists but announces itself. */
+const DEV_JWT_SECRET = 'dev-only-insecure-secret-change-me';
+let jwtSecret = process.env.JWT_SECRET ?? '';
+if (!jwtSecret) {
+  jwtSecret = DEV_JWT_SECRET;
+  // eslint-disable-next-line no-console -- one-time operator warning
+  console.warn(
+    '[server] JWT_SECRET not set — using an INSECURE development secret. Set JWT_SECRET before any real deployment.',
+  );
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: intOr(process.env.PORT, 3000),
@@ -29,6 +44,20 @@ export const env = {
   clientOrigins,
   /** "mock" (fixtures) or "google" (Phase 5 vendor). */
   ttsProvider: process.env.TTS_PROVIDER ?? 'mock',
+  /**
+   * Phase 7: SQLite database file (":memory:" supported for tests).
+   * Getters read process.env on EVERY access — static imports hoist above
+   * test files' `process.env.DB_PATH = …` lines, so boot-time capture would
+   * silently point tests at the on-disk database.
+   */
+  get dbPath() {
+    return process.env.DB_PATH ?? `${serverRoot}data/tts.sqlite`;
+  },
+  /** Phase 7: generated-audio storage for history replay. */
+  get uploadsDir() {
+    return process.env.UPLOADS_DIR ?? `${serverRoot}data/uploads`;
+  },
+  jwtSecret,
 };
 
 /**

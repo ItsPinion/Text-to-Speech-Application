@@ -15,7 +15,8 @@ Express API. **Rule #1: API keys never leave the server.**
 | 4 | React UI (input, counts, language/voice, player, download) | ✅ Done — **Level 1 demo complete** |
 | 5 | Real TTS provider (Google Cloud TTS) behind the same interface | ✅ Done |
 | 6 | Hardening: rate limit, CORS allow-list, structured logs | ✅ Done |
-| 7–9 | Auth/history, advanced features, deploy | ⬜ Next |
+| 7 | Level 2: JWT auth, history, favorites (SQLite) | ✅ Done |
+| 8–9 | Advanced slices, deploy | ⬜ Next |
 
 ## Stack
 
@@ -117,6 +118,27 @@ curl -s http://localhost:3000/api/health
 # — never includes key material.
 ```
 
+### `POST /api/auth/*`, `/api/history`, `/api/favorites` — live (Phase 7)
+
+| Endpoint | Auth | Behavior |
+| --- | --- | --- |
+| `POST /api/auth/register` `{email, password}` | — | **201** `{user}` · **400** invalid · **409** duplicate (7.1) |
+| `POST /api/auth/login` `{email, password}` | — | **200** `{token, user}` · **401** (identical message for unknown email / bad password — no enumeration) |
+| `GET /api/auth/me` | Bearer | **200** `{user}` — session restore |
+| `GET /api/history` | Bearer | **200** `{generations: [...]}` newest first · **401** without token (7.3) |
+| `DELETE /api/history/:id` | Bearer | **204** · **404** (missing **or owned by someone else** — no cross-user oracle, 7.4) |
+| `GET/POST/DELETE /api/favorites` | Bearer | Voice favorites; **400** on unknown voice (7.6) |
+| `GET /api/audio/:file` | — | Replays stored MP3s (strict `[\w-]+.mp3`, no traversal) |
+
+**Documented plan-7.7 choice:** `POST /api/tts` auth is **optional** — anonymous
+generation works, and a valid Bearer token additionally records the generation
+(audio file + row) for replay in `SYS://ARCHIVE`.
+
+Storage: SQLite via Node's built-in `node:sqlite` (zero deps, CI-friendly) with
+the plan's exact schema — `users`, `generations`, `favorites`. Passwords are
+scrypt-hashed (`salt:hash`, `timingSafeEqual` compare); tokens are HS256 JWTs
+(7-day expiry). `data/` is git-ignored.
+
 ### `GET /api/voices` — live (Phase 3)
 
 ```json
@@ -206,6 +228,9 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 | `TTS_API_KEY` | *(blank)* | server | **Server-only.** Never in client code or bundles |
 | `TTS_REGION` | *(blank)* | server | Vendor region (future providers) |
 | `TTS_TIMEOUT_MS` | `30000` | server | Vendor request timeout; overdue → 503 |
+| `JWT_SECRET` | *(dev fallback + warning)* | server | **Required in production** — signs login tokens (Phase 7) |
+| `DB_PATH` | `apps/server/data/tts.sqlite` | server | SQLite file; `:memory:` for tests (Phase 7) |
+| `UPLOADS_DIR` | `apps/server/data/uploads` | server | Generated-audio storage for history replay (Phase 7) |
 | `VITE_API_URL` | *(blank)* | client | Empty in dev (Vite proxy); absolute API origin in prod (Phase 9) |
 
 ## Tests
@@ -214,7 +239,7 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
 ```
 
-**Status: Phase 0–6 verified 2026-09-10 — 54 server + 13 client green (3 vendor
+**Status: Phase 0–7 verified 2026-09-10 — 73 server + 13 client green (3 vendor
 tests skip without a real key).**
 
 ### Server (`apps/server/tests/`, Vitest + Supertest)
@@ -255,6 +280,14 @@ tests skip without a real key).**
 | 6.3 | 6 | Disallowed origin | No `Access-Control-Allow-Origin`; allow-list from `CLIENT_ORIGIN` (CSV) | ✅ |
 | 6.4 | 6 | Logs after TTS call | Structured JSON: requestId, durationMs, `textLength` only — no text, no keys | ✅ |
 | — | 6 | Regression: Phases 2–5 suites | All still pass (`rateLimit: false` in per-suite apps) | ✅ |
+| 7.1 | 7 | Register duplicate email | **409** | ✅ |
+| 7.2 | 7 | Login bad password | **401** (same message as unknown email) | ✅ |
+| 7.3 | 7 | `GET /api/history` no token | **401** | ✅ |
+| 7.4 | 7 | User A deletes user B's row | **404** (no cross-user oracle); row survives | ✅ |
+| 7.5 | 7 | TTS + history | Row saved; `audio_url` replays **200** `audio/mpeg` | ✅ |
+| 7.6 | 7 | Favorite unknown voice | **400**; known voice → 201, list joins catalog | ✅ |
+| 7.7 | 7 | Logged-out Generate | **Works anonymously** (documented choice); nothing saved | ✅ |
+| 7.8 | 7 | Two users, two histories | Fully isolated | ✅ |
 
 ### Client (`apps/client/src/`, Vitest + React Testing Library)
 
@@ -310,6 +343,8 @@ targets, `prefers-reduced-motion` support.
 ## Roadmap
 
 See [`TTS-Build-Plan.md`](./TTS-Build-Plan.md) for the full phase-by-phase plan.
-**Phases 0–6 are complete: Level 1 plus hardening — mock by default, one env var
-from real Google speech, rate-limited, CORS-locked, and privacy-logged.** Next up
-(Phase 7, Level 2): auth (JWT), history, and favorites on a real database.
+**Phases 0–7 complete: Level 1 + hardening + Level 2 accounts** — mock by
+default, one env var from real Google speech, rate-limited, CORS-locked,
+privacy-logged, with per-user history and favorites. Remaining (Phase 8/9):
+advanced slices (speed/pitch sliders, file upload, AI enhance, cloud storage)
+and deployment.
