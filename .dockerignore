@@ -1,0 +1,11 @@
+# Build-context hygiene — images copy only what they need, never these.
+**/node_modules
+**/dist
+**/.turbo
+.git
+.env
+.env.*
+*.log
+apps/server/data
+coverage
+.turbo

@@ -64,32 +64,38 @@ The build plan's `client/` + `server/` map to `apps/*` (Turborepo convention):
 └── TTS-Build-Plan.md           # the phase-by-phase source of truth
 ```
 
-## Quickstart
+## Quickstart — one command, whole stack
 
-Requires **Node ≥ 20** and **pnpm ≥ 9** (`npm i -g pnpm` or `corepack enable`).
+| Command | UI | API | Speech | Needs |
+| --- | --- | --- | --- | --- |
+| **`docker compose up`** | http://localhost:8080 | http://localhost:3000 | **IndexTTS — real, local** | Docker |
+| **`pnpm dev:full`** | http://localhost:5173 | http://localhost:3000 | **IndexTTS — real, local** | Docker + Node/pnpm |
+| `pnpm dev` | http://localhost:5173 | http://localhost:3000 | mock fixtures (instant) | Node ≥ 20 + pnpm ≥ 9 |
 
-```bash
-pnpm install
+**`docker compose up`** starts all three containers — UI (nginx), API, and the
+IndexTTS sidecar, wired together (`client → server → indextts` inside the
+compose network). The sidecar's first boot downloads ~2–4 GB of model weights
+into a persistent volume; watch progress with `docker compose logs -f indextts`
+(syntheses answer "unavailable" until that finishes, everything else works).
 
-# Run API (:3000) + UI (:5173) together — UI proxies /api → :3000
-pnpm dev
+**`pnpm dev:full`** is the same stack on bare metal with hot reload: it starts
+the sidecar, waits for its health check (patiently narrating the first-boot
+download), then launches UI + API with `TTS_PROVIDER=indextts` pre-wired.
+Ctrl+C stops the apps **and** the sidecar (weights stay cached, next boot is
+instant). No Docker? It exits with pointing-you-at-`pnpm-dev` instructions.
 
-# Or run one app
-pnpm dev:server
-pnpm dev:client
-```
-
-Open http://localhost:5173 — the **synth bay** is the product: type text (live
-char/word counts), pick a language and voice (from `/api/voices`), hit
-**GENERATE SPEECH**, and play/download the MP3. `SYS://HEALTH` keeps polling
-the API; `SYS://SPEC` shows the live catalog + frozen limits.
+**`pnpm dev`** is the zero-setup loop: UI + API with mock fixtures — the whole
+product works (validation, history*, favorites*), just with beeps instead of
+speech. *(history/favorites need a signed-in account — create one in SYS://ACCESS.)*
 
 Other commands:
 
 ```bash
-pnpm build     # type-check + build every app
-pnpm test      # server (32) + client (13) suites — 45 tests
-pnpm --filter @tts/server generate:fixtures   # regenerate mock MP3s (lamejs, no ffmpeg)
+pnpm install    # once, after cloning (skipped by the docker path)
+pnpm build      # type-check + build every app
+pnpm test       # 86 server + 13 client tests
+pnpm dev:server # API only · pnpm dev:client — UI only
+pnpm --filter @tts/server generate:fixtures    # regenerate mock MP3s (pure JS, no ffmpeg)
 ```
 
 ## Locked decisions (Phase 0 — no TBDs)

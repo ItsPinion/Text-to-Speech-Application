@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "turbo run dev",
+    "dev:full": "node scripts/dev-full.mjs",
     "build": "turbo run build",
     "test": "turbo run test",
     "dev:server": "turbo run dev --filter=@tts/server",
