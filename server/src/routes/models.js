@@ -2,7 +2,6 @@ import { Router } from 'express';
 import express from 'express';
 import { writeFile, unlink, mkdir, stat } from 'node:fs/promises';
 import { join as joinPath } from 'node:path';
-import { requireAuth } from '../auth.js';
 import {
   mmsDir,
   mmsModelPresent,
@@ -21,13 +20,16 @@ import {
  * is 100% server-side and offline like every other voice.
  *
  *   GET  /api/models                 → which optional models are present
- *   POST /api/models/mms/:lang/:file → import one file (auth required)
+ *   POST /api/models/mms/:lang/:file → import one file (DEMO MODE: no auth)
  *        lang ∈ te|ta · file ∈ onnx|vocab · raw body (octet-stream)
  *
- * Hardening: authentication, strict allow-list of (lang, file), ONNX
- * magic + size window, vocab shape validation, and a load-verification
- * pass — if onnxruntime cannot open the uploaded .onnx it is deleted
- * and the client gets a clear 400 rather than a broken voice later.
+ * Demo mode: per user decision this is a demo deployment, so the import
+ * is NOT authenticated — anyone can click "⚡ Enable neural …" in the UI,
+ * signed out. File-integrity validation is deliberately KEPT (it is not
+ * access control): strict allow-list of (lang, file), ONNX magic + size
+ * window, vocab shape validation, and a load-verification pass — if
+ * onnxruntime cannot open the uploaded .onnx it is deleted and the
+ * client gets a clear 400 rather than a broken voice later.
  */
 const router = Router();
 
@@ -64,7 +66,6 @@ router.get('/', (req, res) => {
 
 router.post(
   '/mms/:lang/:file',
-  requireAuth,
   express.raw({ type: () => true, limit: ONNX_MAX_BYTES + 1024 * 1024 }),
   async (req, res) => {
     const { lang, file } = req.params;

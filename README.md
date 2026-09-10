@@ -15,7 +15,7 @@ And multi-user: **create an account**, keep a **history** of every generation (r
 | `GET /api/health` | ✅ | `200 { "status": "ok" }` |
 | `GET /api/contract` | ✅ | machine-readable frozen contract |
 | `GET /api/voices` | ✅ | 16 voices across 8 languages + `engine`/`quality` per voice + active `provider` (te/ta flip to `mms`/`neural` once imported) |
-| **Neural voice import** | ✅ | `GET /api/models` status · `POST /api/models/mms/:lang/:file` (auth; ONNX magic + size + shape validation, load-verified) — the browser bridge for models on CDNs the server can't reach |
+| **Neural voice import** | ✅ | `GET /api/models` status · `POST /api/models/mms/:lang/:file` (**demo mode — no auth**; ONNX + vocab integrity validation kept so a bad file can't break a voice) — the browser bridge for models on CDNs the server can't reach |
 | `POST /api/tts` | ✅ | validates → `200 audio/mpeg` (neural Piper speech by default) · `400`/`415` on bad input · `500` on vendor auth failure · `503` on vendor timeout/down |
 | **TTS provider port** | ✅ | `piper` (**neural, offline, free** — default) · `espeak` (classic, all 8 languages) · `mock` (CI-safe) · `google` (neural, needs key) via `TTS_PROVIDER`; keys stay server-side |
 | **Hardening** | ✅ | rate limit `429` + `Retry-After` + `RateLimit-*` · CORS allowlist (no ACAO for foreign origins) · request-id + JSON logs (`textChars` only) |
@@ -156,7 +156,7 @@ cd server && npm run dev
 # health: { "status": "ok", "tts": { "provider": "piper", "configured": true } }
 ```
 
-**Telugu & Tamil — the browser bridge.** No Piper voices exist for them; Meta's MMS VITS models do but live on Hugging Face, which locked-down servers often can't reach. The web app therefore ships a one-time **"⚡ Enable neural Telugu/Tamil"** import: *your browser* downloads `model.onnx` + `vocab.json` (~150 MB, HF serves permissive CORS) and uploads them to `POST /api/models/mms/:lang/:file`. The server validates (ONNX header, size window, vocab shape) and **load-verifies** the model with onnxruntime before accepting; after that, synthesis is 100% server-side and offline. Inference uses the char-level HF `VitsTokenizer` algorithm (lowercase → in-vocab chars → blank-interleave) feeding `input_ids` + `attention_mask`, 16 kHz output — the same recipe as transformers.js, proven in PaulKinlan's MMS workers.
+**Telugu & Tamil — the browser bridge.** No Piper voices exist for them; Meta's MMS VITS models do but live on Hugging Face, which locked-down servers often can't reach. The web app therefore ships a one-time **"⚡ Enable neural Telugu/Tamil"** import: *your browser* downloads `model.onnx` + `vocab.json` (~150 MB, HF serves permissive CORS) and uploads them to `POST /api/models/mms/:lang/:file` — **no account needed (demo mode)**. The server validates (ONNX header, size window, vocab shape) and **load-verifies** the model with onnxruntime before accepting; after that, synthesis is 100% server-side and offline. Inference uses the char-level HF `VitsTokenizer` algorithm (lowercase → in-vocab chars → blank-interleave) feeding `input_ids` + `attention_mask`, 16 kHz output — the same recipe as transformers.js, proven in PaulKinlan's MMS workers.
 
 The pipeline (`providers/piper.js`, a faithful port of Piper's `phonemize.cpp` + `phonemes_to_ids`): text → **sentences** → eSpeak-NG **IPA phonemes** (WASM, using each model's *own* espeak voice) → NFD codepoints + `phoneme_map` → `phoneme_id_map` ids with `^…$` markers and `_` pads → VITS ONNX session per sentence (`input`/`input_lengths`/`scales`/`sid`) → float32 waveform at the model's sample rate → concatenated with 0.2 s sentence pauses → MP3 via the shared lamejs encoder. *(A first cut used espeak's Kirshenbaum notation instead of IPA — the id map is IPA-keyed, so most phonemes were dropped and the output was gibberish; caught from user feedback and fixed by porting piper's algorithm exactly, then verified by decoding every model's id sequence back to IPA.)*
 
@@ -196,7 +196,7 @@ For natural voices later: enable "Cloud Text-to-Speech API" in Google Cloud Cons
 | + (piper) | registry ↔ catalog coherence: 12 neural voices have models, te/ta stay classic | ✅ |
 | + (piper) | eSpeak fallback: te-IN via piper provider still 200 MP3 (warned); missing model files → fallback too | ✅ |
 | + (piper) | **real VITS** (models on disk): English scales with text · Devanagari Hindi · Spanish male≠female (two-speaker model) · POST /api/tts end-to-end | ✅ *(auto-skip without models)* |
-| + (mms) | char tokenizer (blank-interleave, lowercase, in-vocab only) · import route: 401/404/400-garbage/400-bad-ONNX · status flips only when BOTH files present · voices overlay flips te/ta to `mms`/`neural` | ✅ |
+| + (mms) | char tokenizer (blank-interleave, lowercase, in-vocab only) · import route: anonymous upload works (demo mode) · 404 unknown lang/file · 400 garbage vocab · 400 bad ONNX · status flips only when BOTH files present · voices overlay flips te/ta to `mms`/`neural` | ✅ |
 | 5.4 | wrong key (stubbed vendor 403) → **500**, body contains no key; google without key → 500 | ✅ |
 | 5.5 | vendor timeout stub (AbortError) → **503** "TTS provider unavailable" | ✅ |
 | + | selection (default/mock/google/unknown→mock) · request shape (languageCode + ssmlGender + MP3, key in header only) · vendor 429/500/no-audio → 503 · health reports provider w/o secrets | ✅ |

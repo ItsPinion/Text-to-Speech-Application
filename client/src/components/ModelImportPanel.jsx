@@ -10,7 +10,8 @@ import { useEffect, useRef, useState } from 'react';
  * uploads them to the server once. After that, synthesis for those
  * languages is 100% server-side, offline and human-sounding.
  *
- * Requires a signed-in account (the import endpoint is authenticated).
+ * Demo mode: no account needed — the import endpoint is open (per the
+ * Phase 8 demo-mode decision).
  */
 
 /** Where the browser fetches the models from (HF sets permissive CORS). */
@@ -56,7 +57,7 @@ function mb(bytes) {
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
-export default function ModelImportPanel({ token, provider, onImported }) {
+export default function ModelImportPanel({ provider, onImported }) {
   const [status, setStatus] = useState(null); // { te: bool, ta: bool }
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(null); // { lang, phase, received, total }
@@ -104,7 +105,7 @@ export default function ModelImportPanel({ token, provider, onImported }) {
       setProgress({ lang, phase: 'Uploading tokenizer', received: vocab.byteLength, total: vocab.byteLength });
       let res = await fetch(`/api/models/mms/${lang}/vocab`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/octet-stream' },
         body: vocab,
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (HTTP ${res.status})`);
@@ -117,7 +118,7 @@ export default function ModelImportPanel({ token, provider, onImported }) {
       setProgress({ lang, phase: 'Uploading neural model', received: 0, total: model.byteLength });
       res = await fetch(`/api/models/mms/${lang}/onnx`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/octet-stream' },
         body: model,
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (HTTP ${res.status})`);
@@ -140,8 +141,7 @@ export default function ModelImportPanel({ token, provider, onImported }) {
       </div>
       <p className="muted small">
         Telugu &amp; Tamil have no Piper voices — their neural models (Meta MMS) are
-        imported once through your browser, then synthesis is fully offline. Sign in
-        to import.
+        imported once through your browser, then synthesis is fully offline.
       </p>
       <div className="model-import-actions">
         {missing.map(([lang]) => (
@@ -149,7 +149,7 @@ export default function ModelImportPanel({ token, provider, onImported }) {
             key={lang}
             type="button"
             className="generate-btn"
-            disabled={!token || Boolean(progress)}
+            disabled={Boolean(progress)}
             onClick={() => importLanguage(lang)}
           >
             ⚡ Enable neural {MMS_SOURCES[lang].label}
@@ -157,9 +157,6 @@ export default function ModelImportPanel({ token, provider, onImported }) {
           </button>
         ))}
       </div>
-      {!token && (
-        <p className="muted small">Sign in above first — model imports are an account action.</p>
-      )}
       {error && (
         <p className="field-error" role="alert">
           {MMS_SOURCES[error.lang]?.label ?? 'Import'} failed: {error.message}

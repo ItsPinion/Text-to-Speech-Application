@@ -528,6 +528,16 @@ The web app's ModelImportPanel streams `naklitechie/mms-tts-{te,ta}-ONNX` (root 
 **Duration:** 1–2 weeks (stretch)  
 **Goal:** Spec optional advanced features. Implement in slices; each slice has its own tests.
 
+### 8.0 — Demo mode: remove requirements & auth from the model import ✅ (done)
+
+**User decision:** "It's just for a demo, so remove all the requirements and remove even the auth or any kind of verification."
+
+- `POST /api/models/mms/:lang/:file` is **no longer authenticated** — the in-app "⚡ Enable neural Telugu/Tamil" buttons work signed-out, one click, no account.
+- The demo `.env` sets `RATE_LIMIT_MAX=200` so a demo never trips the 429 quota mid-presentation (the frozen contract default stays 10 / 15 min / IP for any real deployment).
+- File-integrity validation is deliberately **kept** (it is not access control): ONNX header + size window, vocab shape, and the onnxruntime load-verification prevent a truncated or corrupt upload from silently breaking a voice.
+- Login / history / favorites remain as *optional* features — anonymous generation was always open, and nothing in the demo flow requires an account anymore.
+- Tests updated: the 401 expectation became an anonymous-upload-works expectation; auth scaffolding removed from the import suite. Server 115 + 4 auto-skipped, client 17/17.
+
 ### 8A — Speed / pitch / volume
 
 - Extend `POST /api/tts` with `{ rate, pitch }` (ranges documented, e.g. rate 0.5–2.0)

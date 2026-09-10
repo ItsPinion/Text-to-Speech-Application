@@ -44,13 +44,6 @@ const modelsOnDisk = Object.values(_internals.MODEL_REGISTRY).every((e) =>
 let mmsTempDir = null;
 
 /** Register + log in a user, return the JWT (route tests need auth). */
-const RUN = Date.now().toString(36); // unique per run (dev DB persists)
-
-async function registerAndLogin(creds) {
-  const reg = await request(app).post('/api/auth/register').send(creds);
-  expect(reg.status).toBe(201);
-  return reg.body.token;
-}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -278,33 +271,32 @@ describe('neural voice import (browser bridge, /api/models)', () => {
     expect(res.body.mms).toEqual({ te: false, ta: false });
   });
 
-  it('importing without a token → 401', async () => {
+  it('imports need NO token (demo mode) — anonymous vocab upload works', async () => {
+    const vocab = {};
+    for (let i = 0; i < 40; i++) vocab[`c${i}`] = i;
     const res = await request(app)
       .post('/api/models/mms/te/vocab')
       .set('Content-Type', 'application/octet-stream')
-      .send('{}');
-    expect(res.status).toBe(401);
+      .send(JSON.stringify(vocab));
+    expect(res.status).toBe(200);
+    expect(res.body.stored).toBe('te.vocab.json');
+    expect(existsSync(joinPath(mmsTempDir, 'te.vocab.json'))).toBe(true);
   });
 
   it('unknown language / file type → 404', async () => {
-    const token = await registerAndLogin({ email: `mms1-${RUN}@example.com`, password: 'mms-pass-123' });
     const lang = await request(app)
       .post('/api/models/mms/xx/vocab')
-      .set('Authorization', `Bearer ${token}`)
       .send('{}');
     expect(lang.status).toBe(404);
     const file = await request(app)
       .post('/api/models/mms/te/weights')
-      .set('Authorization', `Bearer ${token}`)
       .send('x');
     expect(file.status).toBe(404);
   });
 
   it('a garbage vocab → 400; a valid vocab → 200 and the status flips', async () => {
-    const token = await registerAndLogin({ email: `mms2-${RUN}@example.com`, password: 'mms-pass-123' });
     const bad = await request(app)
       .post('/api/models/mms/ta/vocab')
-      .set('Authorization', `Bearer ${token}`)
       .set('Content-Type', 'application/octet-stream')
       .send('not json at all');
     expect(bad.status).toBe(400);
@@ -313,7 +305,6 @@ describe('neural voice import (browser bridge, /api/models)', () => {
     for (let i = 0; i < 40; i++) vocab[`c${i}`] = i; // plausible shape
     const ok = await request(app)
       .post('/api/models/mms/ta/vocab')
-      .set('Authorization', `Bearer ${token}`)
       .set('Content-Type', 'application/octet-stream')
       .send(JSON.stringify(vocab));
     expect(ok.status).toBe(200);
@@ -325,11 +316,9 @@ describe('neural voice import (browser bridge, /api/models)', () => {
   });
 
   it('a non-ONNX binary → 400 (magic/size validation), nothing stored', async () => {
-    const token = await registerAndLogin({ email: `mms3-${RUN}@example.com`, password: 'mms-pass-123' });
     const html = Buffer.from('<html>proxy error page</html>');
     const res = await request(app)
       .post('/api/models/mms/te/onnx')
-      .set('Authorization', `Bearer ${token}`)
       .set('Content-Type', 'application/octet-stream')
       .send(html);
     expect(res.status).toBe(400);
@@ -343,12 +332,10 @@ describe('neural voice import (browser bridge, /api/models)', () => {
     const teBefore = before.body.voices.find((v) => v.id === 'te-IN-female-1');
     expect(teBefore.engine).toBe('espeak'); // not imported yet
 
-    const token = await registerAndLogin({ email: `mms4-${RUN}@example.com`, password: 'mms-pass-123' });
     const vocab = {};
     for (let i = 0; i < 40; i++) vocab[`c${i}`] = i;
     await request(app)
       .post('/api/models/mms/te/vocab')
-      .set('Authorization', `Bearer ${token}`)
       .set('Content-Type', 'application/octet-stream')
       .send(JSON.stringify(vocab));
 

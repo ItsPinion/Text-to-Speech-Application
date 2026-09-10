@@ -266,7 +266,7 @@ export default function App() {
 
       <AuthPanel user={user} onLogin={handleAuth} onLogout={handleLogout} />
 
-      <ModelImportPanel token={token} provider={ttsProvider} onImported={refreshVoices} />
+      <ModelImportPanel provider={ttsProvider} onImported={refreshVoices} />
 
       <section className="panel studio" aria-label="Speech studio">
         <div className="panel-head">
