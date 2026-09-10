@@ -1,6 +1,24 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
+  "globalEnv": [
+    "NODE_ENV",
+    "PORT",
+    "HOST",
+    "CLIENT_ORIGIN",
+    "TTS_PROVIDER",
+    "TTS_API_KEY",
+    "TTS_REGION",
+    "TTS_TIMEOUT_MS",
+    "GOOGLE_TTS_BASE_URL",
+    "INDEX_TTS_API_URL",
+    "INDEX_TTS_TIMEOUT_MS",
+    "JWT_SECRET",
+    "DB_PATH",
+    "UPLOADS_DIR",
+    "VITE_API_URL",
+    "API_PROXY_TARGET"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

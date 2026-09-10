@@ -15,7 +15,7 @@ API can use it as a **free, local, no-credit-card** speech provider.
 ## Run it
 
 > The whole stack — UI, API, and this sidecar — with ONE command:
-> `docker compose up` (UI on :8080) or `pnpm dev:full` (bare metal, hot reload).
+> `docker compose up` (UI on :8080) or `pnpm start` (bare metal, hot reload).
 > The sections below are the sidecar-only details.
 
 ### Option A — Docker (recommended)

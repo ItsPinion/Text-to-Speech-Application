@@ -69,7 +69,7 @@ The build plan's `client/` + `server/` map to `apps/*` (Turborepo convention):
 | Command | UI | API | Speech | Needs |
 | --- | --- | --- | --- | --- |
 | **`docker compose up`** | http://localhost:8080 | http://localhost:3000 | **IndexTTS — real, local** | Docker |
-| **`pnpm dev:full`** | http://localhost:5173 | http://localhost:3000 | **IndexTTS — real, local** | Docker + Node/pnpm |
+| **`pnpm start`** *(or `./start.sh`)* | http://localhost:5173 | http://localhost:3000 | **IndexTTS — real, local** | Docker + Node/pnpm |
 | `pnpm dev` | http://localhost:5173 | http://localhost:3000 | mock fixtures (instant) | Node ≥ 20 + pnpm ≥ 9 |
 
 **`docker compose up`** starts all three containers — UI (nginx), API, and the
@@ -78,11 +78,13 @@ compose network). The sidecar's first boot downloads ~2–4 GB of model weights
 into a persistent volume; watch progress with `docker compose logs -f indextts`
 (syntheses answer "unavailable" until that finishes, everything else works).
 
-**`pnpm dev:full`** is the same stack on bare metal with hot reload: it starts
-the sidecar, waits for its health check (patiently narrating the first-boot
-download), then launches UI + API with `TTS_PROVIDER=indextts` pre-wired.
-Ctrl+C stops the apps **and** the sidecar (weights stay cached, next boot is
-instant). No Docker? It exits with pointing-you-at-`pnpm-dev` instructions.
+**`pnpm start`** (`./start.sh`, Windows: `start.cmd`) does it in two moves:
+`docker compose up -d indextts`, then the API + webserver start **immediately,
+in parallel**, with `TTS_PROVIDER=indextts` pre-wired — no waiting. The apps
+are usable right away; speech starts working once the sidecar finishes
+preparing (first boot downloads ~2–4 GB; `docker compose logs -f indextts`).
+Ctrl+C stops the apps **and** the sidecar (weights stay cached, next start is
+instant). No Docker? It exits pointing at `pnpm dev`.
 
 **`pnpm dev`** is the zero-setup loop: UI + API with mock fixtures — the whole
 product works (validation, history*, favorites*), just with beeps instead of
