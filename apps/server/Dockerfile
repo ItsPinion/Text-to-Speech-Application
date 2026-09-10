@@ -7,7 +7,11 @@ RUN npm install -g bun@1
 WORKDIR /app
 
 # Manifests first for Docker layer caching, then one workspace install.
-COPY package.json bun.lock turbo.json ./
+# bunfig.toml pins the hoisted linker: real dirs at the ROOT node_modules —
+# with bun 1.4's default isolated linker, workspace deps are symlinks inside
+# apps/*/node_modules, which the dev compose bind mounts would shadow (and
+# --production silently no-ops at a workspace root!). See docker-compose.yml.
+COPY package.json bun.lock turbo.json bunfig.toml ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
 COPY apps/client/package.json apps/client/

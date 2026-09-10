@@ -7,7 +7,7 @@ RUN npm install -g bun@1
 
 WORKDIR /app
 
-COPY package.json bun.lock turbo.json ./
+COPY package.json bun.lock turbo.json bunfig.toml ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/client/package.json apps/client/
 COPY apps/server/package.json apps/server/

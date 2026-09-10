@@ -62,7 +62,7 @@ services:
       dockerfile: apps/server/Dockerfile
     container_name: tts-server
     working_dir: /app
-    command: node --watch apps/server/src/server.js
+    command: ["node", "--watch", "apps/server/src/server.js"]
     ports:
       - "3000:3000"
     environment:
@@ -89,9 +89,19 @@ services:
       target: deps
     container_name: tts-client
     working_dir: /app
-    # Absolute cd + loud diagnostics — never depend on the image's WORKDIR.
-    # (vite.config.ts already sets host 0.0.0.0 / port 5173 / /api proxy.)
-    command: 'sh -c "cd /app/apps/client || { echo "[client] FATAL - /app/apps/client missing - /app contains"; ls -la /app; exit 1; }; exec bun run dev"'
+    # List form + literal block: exactly one shell parses exactly this script
+    # (nested quotes in a scalar string got mangled by a shell layer once).
+    # vite.config.ts already binds 0.0.0.0:5173 and proxies /api.
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -d /app/apps/client ]; then
+          echo "FATAL: /app/apps/client missing inside the container; /app contains:"
+          ls -la /app
+          exit 1
+        fi
+        exec bun run dev
     ports:
       - "5173:5173"
     environment:
