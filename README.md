@@ -147,13 +147,19 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
 ```
 
-Server suite (`apps/server/tests/`, Vitest + Supertest):
+Server suite (`apps/server/tests/`, Vitest + Supertest). **Status: Phase 0–1 verified 2026-09-10 — 8/8 automated green, manual 1.3/1.4 executed.**
 
-| ID | Phase | Test | Expected |
-| --- | --- | --- | --- |
-| 1.1 | 1 | `GET /api/health` | **200**, `{ "status": "ok" }`, JSON |
-| 1.2 | 1 | `GET /api/does-not-exist` | **404**, contract JSON — never HTML |
-| — | 1 | `DELETE /api/health` | **404** JSON |
+| ID | Phase | Test | Expected | Status |
+| --- | --- | --- | --- | --- |
+| 0.1 | 0 | README lists install steps + env vars | Present | ✅ |
+| 0.2 | 0 | `.env` git-ignored; `TTS_API_KEY=` blank in `.env.example` | No secrets committable | ✅ |
+| 0.3 | 0 | Limits documented (4 000 chars, 10 req/15 min, `audio/mpeg`), no TBD | Documented | ✅ |
+| — | 0 | Contract guard (`tests/contract.test.js`) | Frozen limits + envelopes asserted as code | ✅ |
+| 1.1 | 1 | `GET /api/health` (Supertest + live curl) | **200**, `{ "status": "ok" }`, JSON | ✅ |
+| 1.2 | 1 | `GET /api/does-not-exist` | **404**, contract JSON — never HTML | ✅ |
+| — | 1 | `DELETE /api/health` (unsupported method) | **404** JSON | ✅ |
+| 1.3 | 1 | Manual: health while server running | `200` `application/json` in ~1 ms | ✅ |
+| 1.4 | 1 | Manual: server stopped, hit health | Connection refused — client error path confirmed | ✅ |
 
 Phase 2 adds the validation matrix (tests 2.1–2.8), Phase 3 the audio/voice tests,
 Phase 4 the React Testing Library suite.
