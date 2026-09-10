@@ -6,7 +6,7 @@ import { SUPPORTED_LANGUAGES } from '@tts/shared';
 import { createApp } from '../src/app.js';
 import { listVoices } from '../src/services/voiceCatalog.js';
 
-const app = createApp();
+const app = createApp({ rateLimit: false }); // existing suites are not rate-limit tests (6.1 has its own suite)
 
 // ── Test 3.1 ────────────────────────────────────────────────────────
 // GET /api/voices → 200, array length ≥ 2, each item has id/name/language/gender

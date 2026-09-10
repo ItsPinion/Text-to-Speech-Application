@@ -1,4 +1,5 @@
-import { SelectField } from '@/components/tts/SelectField'
+import { SelectField, type SelectOption } from '@/components/tts/SelectField'
+import { formatLanguage } from '@/lib/labels'
 
 interface LanguageSelectorProps {
   languages: string[]
@@ -8,8 +9,9 @@ interface LanguageSelectorProps {
 }
 
 /**
- * Plan §Phase 4 LanguageSelector: dropdown fed by the unique languages in
- * GET /api/voices. Defaults to en-US (the frozen DEFAULT_LANGUAGE).
+ * Plan §Phase 4 LanguageSelector: fed by the unique languages in
+ * GET /api/voices. Options use full-form labels — "English (United
+ * States)", not "en-US" — with the raw locale as a dimmed hint.
  */
 export function LanguageSelector({
   languages,
@@ -17,22 +19,20 @@ export function LanguageSelector({
   onChange,
   disabled,
 }: LanguageSelectorProps) {
+  const options: SelectOption[] = languages.map((language) => ({
+    value: language,
+    label: formatLanguage(language),
+    hint: language.toUpperCase(),
+  }))
+
   return (
     <SelectField
       id="tts-language"
       label="Language"
+      options={options}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       disabled={disabled}
-    >
-      {languages.length === 0 && (
-        <option value="">— NO LANGUAGES LOADED —</option>
-      )}
-      {languages.map((language) => (
-        <option key={language} value={language} className="bg-black font-mono">
-          {language}
-        </option>
-      ))}
-    </SelectField>
+    />
   )
 }

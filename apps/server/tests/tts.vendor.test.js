@@ -14,7 +14,7 @@ import { createApp } from '../src/app.js';
  * TTS_API_KEY=… pnpm --filter @tts/server test`.
  */
 
-const app = createApp();
+const app = createApp({ rateLimit: false }); // existing suites are not rate-limit tests (6.1 has its own suite)
 
 const postTts = (body = { text: 'Hello', language: 'en-US', voice: 'en-US-female-1' }) =>
   request(app).post('/api/tts').set('Content-Type', 'application/json').send(body);

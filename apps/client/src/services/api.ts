@@ -13,9 +13,11 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path}`
 }
 
-/** Phase 1 health contract body. */
+/** Phase 1 health contract body (Phase 6 adds the secret-free tts field). */
 export interface HealthResponse {
   status: string
+  /** "mock" | "configured" | "unconfigured" — never carries secrets. */
+  tts?: string
 }
 
 /**

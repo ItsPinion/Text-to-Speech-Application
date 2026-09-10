@@ -125,22 +125,39 @@ describe('TtsStudio — plan test 4.4 (voice list filters by language)', () => {
     const user = userEvent.setup()
     renderStudio()
 
-    // Catalog loads async — wait for the en-US voices to populate.
-    expect(await screen.findByRole('option', { name: /Aria/ })).toBeDefined()
-    // Default language (en-US) → initial voice snaps to Aria.
-    expect((screen.getByLabelText(/voice/i) as HTMLSelectElement).value).toBe(
-      'en-US-female-1',
+    // Catalog loads async — the voice trigger snaps to the first en-US voice.
+    const voiceTrigger = screen.getByRole('button', { name: /voice/i })
+    await waitFor(() =>
+      expect(voiceTrigger).toHaveTextContent('Aria — Female Voice'),
     )
 
-    await user.selectOptions(screen.getByLabelText(/language/i), 'hi-IN')
-
-    // en-US voices are gone from the dropdown…
-    expect(screen.queryByRole('option', { name: /Aria/ })).toBeNull()
-    expect(screen.getByRole('option', { name: /Priya/ })).toBeDefined()
-    // …and the selection was reset to the first hi-IN voice (no stale voice).
-    expect((screen.getByLabelText(/voice/i) as HTMLSelectElement).value).toBe(
-      'hi-IN-female-1',
+    // Open the language dropdown and pick Hindi — full-form labels.
+    await user.click(screen.getByRole('button', { name: /language/i }))
+    await user.click(
+      await screen.findByRole('option', { name: /Hindi \(India\)/i }),
     )
+
+    // The voice selection reset to a hi-IN voice, and the popup lists only
+    // voices that speak the selected language.
+    expect(voiceTrigger).toHaveTextContent('Priya — Female Voice')
+    await user.click(voiceTrigger)
+    expect(
+      screen.getByRole('option', { name: /Priya — Female Voice/ }),
+    ).toBeDefined()
+    expect(screen.queryByRole('option', { name: /Aria — Female Voice/ })).toBeNull()
+
+    // Escape closes without selecting; switch back to English via full form.
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: /language/i }))
+    await user.click(
+      screen.getByRole('option', { name: /English \(United States\)/i }),
+    )
+    expect(voiceTrigger).toHaveTextContent('Aria — Female Voice')
+
+    // Selecting a voice works through the same dropdown.
+    await user.click(voiceTrigger)
+    await user.click(screen.getByRole('option', { name: /Marcus — Male Voice/ }))
+    expect(voiceTrigger).toHaveTextContent('Marcus — Male Voice')
   })
 })
 

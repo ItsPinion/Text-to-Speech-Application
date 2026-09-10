@@ -1,8 +1,3 @@
-/**
- * Centralised environment access. dotenv loads apps/server/.env when present;
- * every value has a safe development default so the server boots with zero config.
- * Secrets (TTS_API_KEY) are read here only — never logged, never sent to the client.
- */
 import 'dotenv/config';
 
 const intOr = (value, fallback) => {
@@ -10,13 +5,29 @@ const intOr = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+/**
+ * Phase 6 CORS allow-list: CLIENT_ORIGIN accepts a comma-separated list of
+ * allowed origins ("https://app.example.com,https://staging.example.com").
+ * Anything not on the list gets no Access-Control-Allow-Origin header
+ * (plan test 6.3).
+ */
+const clientOrigins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+if (clientOrigins.length === 0) {
+  clientOrigins.push('http://localhost:5173');
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: intOr(process.env.PORT, 3000),
   host: process.env.HOST ?? '0.0.0.0',
-  /** CORS placeholder for the Vite dev server (hardened allow-list lands in Phase 6). */
-  clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
-  /** "mock" until Phase 5 wires a real vendor behind the same interface. */
+  /** Primary allowed origin (logs/tests); full allow-list below. */
+  clientOrigin: clientOrigins[0],
+  clientOrigins,
+  /** "mock" (fixtures) or "google" (Phase 5 vendor). */
   ttsProvider: process.env.TTS_PROVIDER ?? 'mock',
 };
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/app.js';
 
-const app = createApp();
+const app = createApp({ rateLimit: false }); // existing suites are not rate-limit tests (6.1 has its own suite)
 
 const postJson = (body) =>
   request(app).post('/api/tts').set('Content-Type', 'application/json').send(body);

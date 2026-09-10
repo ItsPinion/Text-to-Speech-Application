@@ -9,6 +9,8 @@ export interface ApiHealth {
   latencyMs: number | null
   lastCheckedAt: Date | null
   checks: number
+  /** Secret-free provider hint from Phase 6 health: mock/configured/unconfigured. */
+  provider: string | null
   recheck: () => void
 }
 
@@ -25,6 +27,7 @@ export function useApiHealth(pollMs: number = HEALTH_POLL_MS): ApiHealth {
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null)
   const [checks, setChecks] = useState(0)
+  const [provider, setProvider] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
 
   const recheck = useCallback(() => setTick((t) => t + 1), [])
@@ -36,12 +39,15 @@ export function useApiHealth(pollMs: number = HEALTH_POLL_MS): ApiHealth {
     const poll = async () => {
       const startedAt = performance.now()
       try {
-        await checkHealth(controller.signal)
+        const body = await checkHealth(controller.signal)
+        if (controller.signal.aborted) return
         setStatus('online')
+        setProvider(body.tts ?? null)
         setLatencyMs(Math.round(performance.now() - startedAt))
       } catch {
         if (controller.signal.aborted) return
         setStatus('offline')
+        setProvider(null)
         setLatencyMs(null)
       } finally {
         if (!controller.signal.aborted) {
@@ -60,5 +66,5 @@ export function useApiHealth(pollMs: number = HEALTH_POLL_MS): ApiHealth {
     }
   }, [pollMs, tick])
 
-  return { status, latencyMs, lastCheckedAt, checks, recheck }
+  return { status, latencyMs, lastCheckedAt, checks, provider, recheck }
 }

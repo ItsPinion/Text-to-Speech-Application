@@ -98,7 +98,7 @@ export default function App() {
           <span className="text-magenta text-glow-magenta">TERMINAL</span>
         </a>
         <div className="flex items-center gap-3">
-          <Badge variant="muted">PHASE 0–4 · LEVEL 1</Badge>
+          <Badge variant="muted">PHASE 0–6 · LEVEL 1+</Badge>
           <Badge variant={STATUS_TONE[health.status]}>
             <StatusDot tone={STATUS_TONE[health.status]} pulse={health.status !== 'checking'} />
             API {STATUS_LABEL[health.status]}
@@ -189,6 +189,20 @@ export default function App() {
                 <ReadoutRow
                   label="LAST CHECK"
                   value={health.lastCheckedAt?.toLocaleTimeString() ?? '——'}
+                />
+                <ReadoutRow
+                  label="TTS ENGINE"
+                  value={
+                    health.status !== 'online' ? (
+                      '——'
+                    ) : health.provider === 'configured' ? (
+                      <span className="text-sunset">VENDOR — KEY SET</span>
+                    ) : health.provider === 'unconfigured' ? (
+                      <span className="text-magenta">VENDOR — NO KEY</span>
+                    ) : (
+                      <span className="text-cyan text-glow-cyan">MOCK FIXTURES</span>
+                    )
+                  }
                 />
                 <ReadoutRow label="CHECKS" value={health.checks} />
               </dl>
@@ -282,7 +296,7 @@ export default function App() {
       {/* ── Footer ─────────────────────────────────────────────── */}
       <footer className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-10 pt-2 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6 font-mono text-xs text-chrome/50">
-          <span>&gt; BUILD PHASE 0–4 · LEVEL 1 DEMO · SECRETS STAY SERVER-SIDE</span>
+          <span>&gt; BUILD PHASE 0–6 · HARDENED · SECRETS STAY SERVER-SIDE</span>
           <span className="flex items-center gap-2">
             <StatusDot tone={isOnline ? 'cyan' : 'magenta'} />
             {isOnline ? 'ALL SYSTEMS NOMINAL' : 'AWAITING SIGNAL'}

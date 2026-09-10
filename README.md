@@ -14,8 +14,8 @@ Express API. **Rule #1: API keys never leave the server.**
 | 3 | Mock TTS + audio response + `GET /api/voices` | ✅ Done |
 | 4 | React UI (input, counts, language/voice, player, download) | ✅ Done — **Level 1 demo complete** |
 | 5 | Real TTS provider (Google Cloud TTS) behind the same interface | ✅ Done |
-| 6 | Hardening: rate limit, CORS allow-list, structured logs | ⬜ Next |
-| 7–9 | Auth/history, advanced features, deploy | ⬜ |
+| 6 | Hardening: rate limit, CORS allow-list, structured logs | ✅ Done |
+| 7–9 | Auth/history, advanced features, deploy | ⬜ Next |
 
 ## Stack
 
@@ -108,11 +108,13 @@ pnpm --filter @tts/server generate:fixtures   # regenerate mock MP3s (lamejs, no
 All errors are contract-shaped JSON — never HTML. Unknown routes return
 `404 { "success": false, "error": "Not found" }`.
 
-### `GET /api/health` — live (Phase 1)
+### `GET /api/health` — live (Phase 1 + Phase 6 `tts` field)
 
 ```bash
 curl -s http://localhost:3000/api/health
-# → 200 {"status":"ok"}
+# → 200 {"status":"ok","tts":"mock"}
+# tts: "mock" | "configured" (vendor + key set) | "unconfigured" (vendor, no key)
+# — never includes key material.
 ```
 
 ### `GET /api/voices` — live (Phase 3)
@@ -150,7 +152,7 @@ voice must exist in the catalog · voice must speak the requested language ·
 | 400 | empty/oversized text, unknown language, unknown voice, voice/language mismatch, malformed JSON | `{"success":false,"error":"…"}` |
 | 415 | `Content-Type` is not `application/json` | `{"success":false,"error":"Content-Type must be application/json"}` |
 | 413 | body exceeds 64 KB | `{"success":false,"error":"Request body too large"}` |
-| 429 | rate limit exceeded (Phase 6, + `Retry-After`) | `{"success":false,"error":"Too many requests"}` |
+| 429 | rate limit exceeded — **live since Phase 6**; includes `Retry-After` + `RateLimit` headers | `{"success":false,"error":"Too many requests"}` |
 | 503 | TTS provider unavailable/timeout | `{"success":false,"error":"TTS provider unavailable"}` |
 
 The mock provider streams a per-voice fixture MP3 (~1 s pitched dual-beep —
@@ -199,7 +201,7 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 | --- | --- | --- | --- |
 | `PORT` | `3000` | server | API port |
 | `HOST` | `0.0.0.0` | server | Bind address |
-| `CLIENT_ORIGIN` | `http://localhost:5173` | server | CORS placeholder (allow-list hardened in Phase 6) |
+| `CLIENT_ORIGIN` | `http://localhost:5173` | server | CORS **allow-list** — comma-separated for multiple origins (Phase 6) |
 | `TTS_PROVIDER` | `mock` | server | `mock` needs no key; vendor choice lands Phase 5 |
 | `TTS_API_KEY` | *(blank)* | server | **Server-only.** Never in client code or bundles |
 | `TTS_REGION` | *(blank)* | server | Vendor region (future providers) |
@@ -212,7 +214,7 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
 ```
 
-**Status: Phase 0–5 verified 2026-09-10 — 45 server + 13 client green (3 vendor
+**Status: Phase 0–6 verified 2026-09-10 — 54 server + 13 client green (3 vendor
 tests skip without a real key).**
 
 ### Server (`apps/server/tests/`, Vitest + Supertest)
@@ -248,6 +250,11 @@ tests skip without a real key).**
 | 5.5 | 5 | Vendor timeout / network stub | **503** "TTS provider unavailable" | ✅ |
 | 5.6 | 5 | `grep TTS_API_KEY` in client src + dist | Zero matches | ✅ |
 | 5.7 | 5 | Two voices → different audio | Different buffers *(real key)* · fixtures differ per voice | ✅ |
+| 6.1 | 6 | 11th TTS from same IP in window | **429** + `Retry-After: 900` + `RateLimit: limit=10` | ✅ |
+| 6.2 | 6 | Health/voices after limit hit | **Never 429** — unlimited | ✅ |
+| 6.3 | 6 | Disallowed origin | No `Access-Control-Allow-Origin`; allow-list from `CLIENT_ORIGIN` (CSV) | ✅ |
+| 6.4 | 6 | Logs after TTS call | Structured JSON: requestId, durationMs, `textLength` only — no text, no keys | ✅ |
+| — | 6 | Regression: Phases 2–5 suites | All still pass (`rateLimit: false` in per-suite apps) | ✅ |
 
 ### Client (`apps/client/src/`, Vitest + React Testing Library)
 
@@ -303,8 +310,6 @@ targets, `prefers-reduced-motion` support.
 ## Roadmap
 
 See [`TTS-Build-Plan.md`](./TTS-Build-Plan.md) for the full phase-by-phase plan.
-**Level 1 is demo-complete (Phases 0–5): mock by default, one env var away from
-real Google speech.** Next up — **Phase 6** hardening: `express-rate-limit`
-(10 TTS / 15 min / IP with `Retry-After`), `CLIENT_ORIGIN` CORS allow-list,
-request-id structured logging, and `GET /api/health` reporting
-`tts: "mock" | "configured"`.
+**Phases 0–6 are complete: Level 1 plus hardening — mock by default, one env var
+from real Google speech, rate-limited, CORS-locked, and privacy-logged.** Next up
+(Phase 7, Level 2): auth (JWT), history, and favorites on a real database.

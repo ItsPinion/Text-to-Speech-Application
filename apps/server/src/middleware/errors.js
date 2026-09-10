@@ -17,7 +17,7 @@ export function notFoundHandler(req, res) {
  *     nothing provider-specific leaks to the client (Phase 5 test 5.4).
  */
 // eslint-disable-next-line no-unused-vars -- express identifies error handlers by arity
-export function errorHandler(err, _req, res, _next) {
+export function errorHandler(err, req, res, _next) {
   const status =
     Number.isInteger(err?.status) && err.status >= 400 && err.status <= 599
       ? err.status
@@ -28,7 +28,10 @@ export function errorHandler(err, _req, res, _next) {
   if (err?.type === 'entity.too.large') message = 'Request body too large';
 
   if (status >= 500) {
-    console.error('[server] unhandled error:', err?.message ?? err);
+    console.error(
+      `[server] unhandled error request_id=${req?.id ?? 'n/a'}:`,
+      err?.message ?? err,
+    );
   }
   res.status(status).json(apiError(message));
 }

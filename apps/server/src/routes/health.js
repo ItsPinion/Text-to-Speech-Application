@@ -1,15 +1,32 @@
 import { Router } from 'express';
 
+import { getTtsConfig } from '../config/env.js';
+
 /**
- * GET /api/health — Phase 1 contract, frozen:
- *   200 → { "status": "ok" }
- * Operators ping it; the client polls it to wait for backend readiness.
- * (Phase 6 extends this with a secret-free `tts: "mock" | "configured"` field.)
+ * GET /api/health — Phase 6 shape (plan: "health shows whether a key is
+ * configured, without secrets"):
+ *
+ *   200 → { "status": "ok", "tts": "mock" | "configured" | "unconfigured" }
+ *
+ *   mock          → fixture provider, no key needed (CI / early phases)
+ *   configured    → vendor provider + TTS_API_KEY present (never the key)
+ *   unconfigured  → vendor provider selected but no key set — operator hint
+ *
+ * The `status` field keeps the Phase 1 contract; the client treats extra
+ * fields as additive.
  */
 const router = Router();
 
 router.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+  const config = getTtsConfig();
+  const tts =
+    config.provider === 'mock'
+      ? 'mock'
+      : config.apiKey
+        ? 'configured'
+        : 'unconfigured';
+
+  res.json({ status: 'ok', tts });
 });
 
 export default router;
