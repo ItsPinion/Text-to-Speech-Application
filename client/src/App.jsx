@@ -1,67 +1,137 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Atmosphere from './components/Atmosphere';
 import Scanlines from './components/Scanlines';
 import TerminalWindow from './components/TerminalWindow';
-import Button from './components/Button';
-import { getHealth } from './services/api';
+import TextInput from './components/TextInput';
+import LanguageSelector from './components/LanguageSelector';
+import VoiceSelector from './components/VoiceSelector';
+import GenerateButton from './components/GenerateButton';
+import AudioPlayer from './components/AudioPlayer';
+import DownloadButton from './components/DownloadButton';
+import ErrorMessage from './components/ErrorMessage';
+import { getHealth, getVoices, synthesize } from './services/api';
+import { DEFAULT_LANGUAGE, uniqueLanguages } from './utils/languages';
+import { MAX_TEXT_LENGTH } from './utils/textStats';
 
 /**
- * Phase 0–1 shell: a terminal boot screen that handshakes with the API
- * gateway (GET /api/health). When Phase 4 lands, the workspace replaces
- * this screen — the atmosphere layers, window chrome, and buttons carry over.
+ * Phase 4 — the Level-1 workspace (spec §32):
+ * text + counts → language → voice → generate → player → download → errors.
+ * All speech data comes from the API; the browser never sees any key.
  */
-const STATUS = {
-  checking: {
-    label: 'LINKING…',
-    accent: 'text-neon-magenta',
-    glow: 'drop-shadow-[0_0_30px_rgba(255,0,255,0.6)]',
-    led: 'bg-neon-magenta animate-pulse',
-  },
-  online: {
-    label: 'ONLINE',
-    accent: 'text-neon-cyan',
-    glow: 'drop-shadow-[0_0_10px_rgba(0,255,255,0.8)]',
-    led: 'bg-neon-cyan animate-pulse',
-  },
-  offline: {
-    label: 'OFFLINE',
-    accent: 'text-neon-orange',
-    glow: 'drop-shadow-[0_0_10px_rgba(255,153,0,0.8)]',
-    led: 'bg-neon-orange animate-pulse',
-  },
-};
-
-function describeError(err) {
-  if (err.name === 'AbortError') return 'TIMEOUT — gateway did not answer in 5s';
-  if (err instanceof TypeError) return 'CONNECTION REFUSED — is the API running? (cd server && npm run dev)';
-  return err.message.toUpperCase();
-}
-
 export default function App() {
-  const [status, setStatus] = useState('checking');
-  const [latencyMs, setLatencyMs] = useState(null);
-  const [detail, setDetail] = useState(null);
+  // catalog
+  const [voices, setVoices] = useState([]);
+  const [catalogError, setCatalogError] = useState(null);
+  // form
+  const [text, setText] = useState('');
+  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
+  const [voiceId, setVoiceId] = useState('');
+  // synthesis
+  const [generating, setGenerating] = useState(false);
+  const [ttsError, setTtsError] = useState(null);
+  const [audio, setAudio] = useState(null);
+  // footer uplink readout
+  const [uplink, setUplink] = useState('checking');
+  const audioUrlRef = useRef(null);
 
-  const runHandshake = useCallback(async () => {
-    setStatus('checking');
-    setDetail(null);
-    const t0 = performance.now();
-    try {
-      await getHealth();
-      setLatencyMs(Math.max(1, Math.round(performance.now() - t0)));
-      setStatus('online');
-    } catch (err) {
-      setLatencyMs(null);
-      setDetail(describeError(err));
-      setStatus('offline');
-    }
+  // ── catalog + uplink on mount ────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getVoices();
+        if (cancelled) return;
+        setVoices(list);
+        // default to the first voice on the default channel
+        const first =
+          list.find((v) => v.language === DEFAULT_LANGUAGE) ?? list[0];
+        if (first) setVoiceId(first.id);
+      } catch (err) {
+        if (!cancelled) setCatalogError(err);
+      }
+    })();
+    (async () => {
+      try {
+        await getHealth();
+        if (!cancelled) setUplink('online');
+      } catch {
+        if (!cancelled) setUplink('offline');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    runHandshake();
-  }, [runHandshake]);
+  // ── editing text invalidates the previous synthesis ──────────
+  const revokeAudio = useCallback(() => {
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    setAudio(null);
+    setTtsError(null);
+  }, []);
 
-  const s = STATUS[status];
+  const handleTextChange = useCallback(
+    (next) => {
+      setText(next);
+      if (audioUrlRef.current) revokeAudio();
+    },
+    [revokeAudio]
+  );
+
+  useEffect(() => () => revokeAudio(), [revokeAudio]);
+
+  // ── derived catalog views ────────────────────────────────────
+  const languages = useMemo(() => uniqueLanguages(voices), [voices]);
+  const channelVoices = useMemo(
+    () => voices.filter((v) => v.language === language),
+    [voices, language]
+  );
+
+  const handleLanguageChange = useCallback(
+    (code) => {
+      setLanguage(code);
+      // reset the voice if it does not exist on the new channel
+      const stillValid = voices.some(
+        (v) => v.id === voiceId && v.language === code
+      );
+      if (!stillValid) {
+        const first = voices.find((v) => v.language === code);
+        setVoiceId(first ? first.id : '');
+      }
+    },
+    [voices, voiceId]
+  );
+
+  // ── generate ─────────────────────────────────────────────────
+  const canGenerate =
+    text.trim().length > 0 &&
+    language !== '' &&
+    voiceId !== '' &&
+    voices.length > 0 &&
+    !generating;
+
+  const handleGenerate = useCallback(async () => {
+    setGenerating(true);
+    setTtsError(null);
+    try {
+      const blob = await synthesize({ text, language, voice: voiceId });
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const kb = blob.size > 0 ? `${Math.max(1, Math.round(blob.size / 1024))} KB` : '—';
+      const name = voices.find((v) => v.id === voiceId)?.name ?? voiceId;
+      setAudio({ url, name, kb });
+    } catch (err) {
+      setTtsError(err);
+    } finally {
+      setGenerating(false);
+    }
+  }, [text, language, voiceId, voices]);
+
+  const uplinkColor =
+    uplink === 'online' ? 'text-neon-cyan' : uplink === 'offline' ? 'text-neon-orange' : 'text-neon-magenta';
 
   return (
     <div className="relative flex min-h-screen flex-col">
@@ -70,80 +140,123 @@ export default function App() {
 
       {/* Top bar */}
       <header className="relative z-10 border-b border-dim-border bg-black/40 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <p className="font-heading text-sm font-bold uppercase tracking-widest text-chrome sm:text-base">
             TEXT<span className="text-neon-magenta">→</span>SPEECH
             <span className="ml-2 font-mono text-xs font-normal text-chrome/50">
-              // TERMINAL v0.1.0
+              // TERMINAL v0.4.0
             </span>
           </p>
           <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-chrome/60">
-            <span className="h-2.5 w-2.5 rounded-full" aria-hidden="true" />
-            <span className={`h-2.5 w-2.5 rounded-full ${s.led}`} aria-hidden="true" />
-            <span>PHASE 1</span>
+            <span className={`h-2.5 w-2.5 rounded-full ${uplink === 'online' ? 'bg-neon-cyan' : uplink === 'offline' ? 'bg-neon-orange' : 'bg-neon-magenta'} animate-pulse`} aria-hidden="true" />
+            <span>PHASE 4 · LEVEL 1</span>
           </div>
         </div>
       </header>
 
-      {/* Boot terminal */}
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-16">
-        <div className="w-full max-w-2xl">
-          <h1 className="sr-only">Text-to-Speech platform terminal</h1>
+      {/* Workspace */}
+      <main className="relative z-10 flex-1 px-4 py-12 sm:py-16">
+        <div className="mx-auto w-full max-w-4xl">
+          <div className="mb-10 text-center">
+            <h1 className="bg-gradient-to-r from-neon-orange via-neon-magenta to-neon-cyan bg-clip-text font-heading text-3xl font-black uppercase tracking-wider text-transparent drop-shadow-[0_0_30px_rgba(255,0,255,0.6)] sm:text-5xl">
+              VOICE SYNTHESIS
+            </h1>
+            <p className="mt-3 font-mono text-sm uppercase tracking-widest text-chrome/50 sm:text-base">
+              &gt; feed text · select channel · transmit
+            </p>
+          </div>
 
-          <TerminalWindow title="GATEWAY — /api/health">
-            {/* Boot log */}
-            <ul className="space-y-1.5 font-mono text-sm sm:text-base" aria-label="Boot log">
-              <li className="animate-boot-reveal text-neon-cyan">
-                <span className="text-neon-magenta">&gt;</span> TTS.SYS v0.1.0 — VOICE SYNTHESIS CORE
-              </li>
-              <li className="animate-boot-reveal text-chrome/70 [animation-delay:120ms]">
-                <span className="text-neon-magenta">&gt;</span> NEON SUBSYSTEMS......... <span className="text-neon-cyan">OK</span>
-              </li>
-              <li className="animate-boot-reveal text-chrome/70 [animation-delay:240ms]">
-                <span className="text-neon-magenta">&gt;</span> CRT SCANLINE OVERLAY.... <span className="text-neon-cyan">OK</span>
-              </li>
-              <li className="animate-boot-reveal text-chrome/70 [animation-delay:360ms]">
-                <span className="text-neon-magenta">&gt;</span> API GATEWAY HANDSHAKE...{' '}
-                {status === 'checking' ? (
-                  <span className="text-neon-magenta">
-                    LISTENING
-                    <span className="animate-blink">_</span>
-                  </span>
-                ) : status === 'online' ? (
-                  <span className="text-neon-cyan">200 OK ({latencyMs}ms)</span>
-                ) : (
-                  <span className="text-neon-orange">FAILED</span>
+          <TerminalWindow title="TTS://WORKSPACE">
+            <div className="space-y-8">
+              {/* STEP 1 — text */}
+              <TextInput value={text} onChange={handleTextChange} disabled={generating} />
+
+              <div className="h-px bg-gradient-to-r from-neon-magenta/50 via-dim-border to-transparent" />
+
+              {/* STEP 2 — channel */}
+              <section aria-labelledby="channel-label">
+                <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+                  <h2
+                    id="channel-label"
+                    className="group flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-neon-magenta"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-2 w-2 rotate-45 bg-neon-magenta transition-transform duration-200 ease-linear group-hover:rotate-90"
+                    />
+                    {' STEP_02 :: CHANNEL'}
+                  </h2>
+                  {voices.length > 0 && (
+                    <p className="font-mono text-xs tracking-wider text-chrome/50">
+                      VOICES ONLINE: {voices.length}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-5 sm:flex-row">
+                  <LanguageSelector
+                    languages={languages}
+                    value={language}
+                    onChange={handleLanguageChange}
+                    disabled={Boolean(catalogError)}
+                  />
+                  <VoiceSelector
+                    voices={channelVoices}
+                    value={voiceId}
+                    onChange={setVoiceId}
+                    disabled={Boolean(catalogError)}
+                  />
+                </div>
+                {catalogError && (
+                  <div className="mt-3">
+                    <ErrorMessage error={catalogError} />
+                  </div>
                 )}
-              </li>
-            </ul>
+              </section>
 
-            {/* Status readout */}
-            <div
-              role="status"
-              aria-live="polite"
-              className="mt-6 border border-dim-border bg-panel/60 p-5 text-center"
-            >
-              <p className="font-mono text-xs uppercase tracking-widest text-chrome/50">
-                GATEWAY STATUS
-              </p>
-              <p
-                className={`mt-2 font-heading text-4xl font-black uppercase tracking-wider sm:text-5xl ${s.accent} ${s.glow}`}
-              >
-                {s.label}
-              </p>
-              <p className="mt-3 min-h-[1.25rem] font-mono text-xs text-chrome/50">
-                {status === 'online' && 'UPLINK ESTABLISHED — AWAITING PHASE 2: VALIDATION LAYER'}
-                {status === 'offline' && detail}
-              </p>
-            </div>
+              <div className="h-px bg-gradient-to-r from-neon-magenta/50 via-dim-border to-transparent" />
 
-            <div className="mt-6 flex items-center justify-between gap-4">
-              <p className="font-mono text-xs uppercase tracking-wider text-chrome/40">
-                RETRY/RESCAN TO RE-HANDSHAKE
-              </p>
-              <Button onClick={runHandshake} disabled={status === 'checking'} aria-busy={status === 'checking'}>
-                {status === 'checking' ? 'SCANNING' : 'RESCAN'}
-              </Button>
+              {/* STEP 3 — transmit */}
+              <section aria-labelledby="transmit-label">
+                <h2
+                  id="transmit-label"
+                  className="group mb-3 flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-neon-magenta"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2 w-2 rotate-45 bg-neon-magenta transition-transform duration-200 ease-linear group-hover:rotate-90"
+                  />
+                  {' STEP_03 :: TRANSMIT'}
+                </h2>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <GenerateButton
+                    onClick={handleGenerate}
+                    disabled={!canGenerate}
+                    loading={generating}
+                  />
+                  <p className="font-mono text-[11px] uppercase tracking-widest text-chrome/40">
+                    {text.trim().length === 0
+                      ? '> AWAITING INPUT…'
+                      : `> ${text.length}/${MAX_TEXT_LENGTH} CHARS ARMED`}
+                  </p>
+                </div>
+
+                {ttsError && (
+                  <div className="mt-4">
+                    <ErrorMessage error={ttsError} />
+                  </div>
+                )}
+
+                {audio && (
+                  <div className="mt-6 space-y-4">
+                    <AudioPlayer
+                      src={audio.url}
+                      meta={`VOICE: ${audio.name} · ${audio.kb} · speech.mp3`}
+                    />
+                    <DownloadButton src={audio.url} />
+                  </div>
+                )}
+              </section>
             </div>
           </TerminalWindow>
         </div>
@@ -151,14 +264,11 @@ export default function App() {
 
       {/* Status bar */}
       <footer className="relative z-10 border-t-2 border-dim-border bg-black/60 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2 font-mono text-[11px] uppercase tracking-widest text-chrome/40">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2 font-mono text-[11px] uppercase tracking-widest text-chrome/40">
           <span>NODE: CLIENT-01</span>
-          <span className="text-neon-magenta/70">MOCK TTS SCHED: PHASE 3</span>
+          <span className="text-neon-magenta/70">TTS: MOCK PROVIDER</span>
           <span>
-            UPLINK:{' '}
-            <span className={status === 'online' ? 'text-neon-cyan' : 'text-neon-orange'}>
-              {status.toUpperCase()}
-            </span>
+            UPLINK: <span className={uplinkColor}>{uplink}</span>
           </span>
         </div>
       </footer>

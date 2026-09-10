@@ -46,7 +46,8 @@ From Phase 6 the body also includes the provider state **without secrets**:
 
 ## `GET /api/voices`
 
-Static voice catalog for the UI (ships in Phase 3).
+Static voice catalog for the UI (live since Phase 3 — 8 voices across
+en-US, en-GB, hi-IN, es-ES, fr-FR, de-DE; data: `server/src/data/voices.js`).
 
 ```json
 // 200
@@ -98,7 +99,7 @@ Content-Type: audio/mpeg
 | 503 | `{ "success": false, "error": "TTS provider unavailable" }` | vendor down/timeout |
 | 500 | `{ "success": false, "error": "Internal server error" }` | unexpected — never leaks key or vendor details |
 
-**Placeholder (Phase 2 only):** a *valid* body returns `501 { "success": false, "error": "TTS not implemented" }` to prove validation is separate from synthesis.
+**Placeholder (Phase 2 only, retired):** a *valid* body returned `501 { "success": false, "error": "TTS not implemented" }` until Phase 3 connected the mock provider; it now returns the MP3 stream above.
 
 ---
 
