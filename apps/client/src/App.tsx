@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 import { Backdrop } from '@/components/system/Backdrop'
 import { CrtOverlay } from '@/components/system/CrtOverlay'
+import { TtsStudio } from '@/components/tts/TtsStudio'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/Card'
@@ -37,10 +38,10 @@ const ENDPOINTS = [
     method: 'POST',
     path: '/api/tts',
     returns: 'audio/mpeg BYTES',
-    codes: '200 · 400 · 415 · 413',
+    codes: '200 · 400 · 415 · 413 · 503',
     phase: 'LIVE — PHASE 3',
     live: true,
-    liveNote: '▲ SYNTHESIS LIVE — MOCK PROVIDER',
+    liveNote: '▲ SYNTHESIS LIVE — TRY THE SYNTH BAY',
     description: 'Text in, MP3 bytes out. The vendor key never leaves the server.',
   },
 ] as const
@@ -97,7 +98,7 @@ export default function App() {
           <span className="text-magenta text-glow-magenta">TERMINAL</span>
         </a>
         <div className="flex items-center gap-3">
-          <Badge variant="muted">PHASE 0–1</Badge>
+          <Badge variant="muted">PHASE 0–4 · LEVEL 1</Badge>
           <Badge variant={STATUS_TONE[health.status]}>
             <StatusDot tone={STATUS_TONE[health.status]} pulse={health.status !== 'checking'} />
             API {STATUS_LABEL[health.status]}
@@ -118,17 +119,17 @@ export default function App() {
             <span className="text-gradient-sunset text-glow-magenta">TEXT A VOICE</span>
           </h1>
           <p className="mx-auto mt-8 max-w-2xl font-mono text-base leading-relaxed text-chrome/70 md:text-lg">
-            React → Express → speech. This command deck reports on the Phase 0–1
-            foundation: a frozen API contract, locked limits, and a live API
-            heartbeat.
+            React → Express → speech. The synth bay below is live: type text,
+            pick a language and voice, and generate MP3 audio against the
+            Express API.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Button
               variant="secondary"
               size="lg"
-              onClick={() => document.getElementById('contract')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => document.getElementById('studio')?.scrollIntoView({ behavior: 'smooth' })}
             >
-              VIEW CONTRACT
+              OPEN SYNTH BAY
             </Button>
             <Button
               variant="outline"
@@ -137,11 +138,23 @@ export default function App() {
             >
               SYSTEM STATUS
             </Button>
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={() => document.getElementById('contract')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              VIEW CONTRACT
+            </Button>
           </div>
           <p className="mt-8 flex items-center justify-center gap-2 font-mono text-xs uppercase tracking-widest text-chrome/60">
             <StatusDot tone={isOnline ? 'cyan' : 'magenta'} />
             {isOnline ? 'ALL SYSTEMS NOMINAL' : 'AWAITING SIGNAL…'}
           </p>
+        </section>
+
+        {/* ── Synth bay — the product (Phase 4) ────────────────── */}
+        <section id="studio" aria-label="Synth bay" className="scroll-mt-6 pb-16 sm:pb-20">
+          <TtsStudio />
         </section>
 
         {/* ── Live status + frozen spec ────────────────────────── */}
@@ -269,7 +282,7 @@ export default function App() {
       {/* ── Footer ─────────────────────────────────────────────── */}
       <footer className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-10 pt-2 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6 font-mono text-xs text-chrome/50">
-          <span>&gt; BUILD PHASE 0–1 · CONTRACT v1 · SECRETS STAY SERVER-SIDE</span>
+          <span>&gt; BUILD PHASE 0–4 · LEVEL 1 DEMO · SECRETS STAY SERVER-SIDE</span>
           <span className="flex items-center gap-2">
             <StatusDot tone={isOnline ? 'cyan' : 'magenta'} />
             {isOnline ? 'ALL SYSTEMS NOMINAL' : 'AWAITING SIGNAL'}

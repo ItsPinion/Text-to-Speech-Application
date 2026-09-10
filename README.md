@@ -12,16 +12,16 @@ Express API. **Rule #1: API keys never leave the server.**
 | 1 | Express skeleton & health (`GET /api/health`, JSON 404, CORS, helmet) | ✅ Done |
 | 2 | Validation layer (`POST /api/tts` rejects garbage, 501 on valid) | ✅ Done |
 | 3 | Mock TTS + audio response + `GET /api/voices` | ✅ Done |
-| 4 | React UI (input, counts, language/voice, player, download) | ⬜ Next |
-| 5 | Real TTS provider behind the same interface | ⬜ |
+| 4 | React UI (input, counts, language/voice, player, download) | ✅ Done — **Level 1 demo complete** |
+| 5 | Real TTS provider behind the same interface | ⬜ Next |
 | 6 | Hardening: rate limit, CORS allow-list, structured logs | ⬜ |
 | 7–9 | Auth/history, advanced features, deploy | ⬜ |
 
 ## Stack
 
 - **Monorepo:** Turborepo + pnpm workspaces
-- **API:** Node 20+, Express 5 (ESM), helmet, cors — tested with Vitest + Supertest
-- **UI:** React 19, Vite 7, TypeScript, Tailwind CSS 4 (CSS-first design tokens)
+- **API:** Node 20+, Express 5 (ESM), helmet, cors — Vitest + Supertest
+- **UI:** React 19, Vite 7, TypeScript, Tailwind CSS 4 — Vitest + React Testing Library
 - **Shared:** `@tts/shared` — the frozen contract (limits, envelopes, types) used by *both* apps
 - **Mock audio:** fixtures encoded in pure JS via `@breezystack/lamejs` (dev-only)
 
@@ -34,10 +34,15 @@ The build plan's `client/` + `server/` map to `apps/*` (Turborepo convention):
 ├── apps/
 │   ├── client/                 # React 19 + Vite + Tailwind 4 — vaporwave command deck
 │   │   └── src/
-│   │       ├── components/ui/       # Button, Card, Badge, TerminalWindow…
-│   │       ├── components/system/   # CrtOverlay, Backdrop (grid + sun)
-│   │       ├── hooks/               # useApiHealth (polls health), useVoices (catalog)
-│   │       ├── services/            # api.ts — the only module that knows the API origin
+│   │       ├── components/
+│   │       │   ├── tts/             # THE PRODUCT: TtsStudio + TextInput, selectors,
+│   │       │   │                    #   GenerateButton, AudioPlayer, ErrorMessage
+│   │       │   ├── ui/              # Button, Card, Badge, TerminalWindow, StatusDot
+│   │       │   └── system/          # CrtOverlay, Backdrop (grid + sun)
+│   │       ├── hooks/               # useApiHealth, useVoices
+│   │       ├── services/api.ts      # the only module that knows the API origin
+│   │       ├── lib/                 # cn(), textStats (live counters)
+│   │       ├── test/setup.ts        # RTL + jest-dom setup
 │   │       └── styles/globals.css   # 🎨 ALL design tokens (@theme) + atmosphere layers
 │   └── server/                 # Express 5 API
 │       ├── fixtures/                # mock-provider MP3s (per-voice pitches + beep.mp3)
@@ -73,15 +78,16 @@ pnpm dev:server
 pnpm dev:client
 ```
 
-- UI: http://localhost:5173 — the `SYS://HEALTH` panel polls `GET /api/health`,
-  and `SYS://SPEC` shows the live voice catalog (Phase 3).
-- API: http://localhost:3000/api/health · http://localhost:3000/api/voices
+Open http://localhost:5173 — the **synth bay** is the product: type text (live
+char/word counts), pick a language and voice (from `/api/voices`), hit
+**GENERATE SPEECH**, and play/download the MP3. `SYS://HEALTH` keeps polling
+the API; `SYS://SPEC` shows the live catalog + frozen limits.
 
 Other commands:
 
 ```bash
 pnpm build     # type-check + build every app
-pnpm test      # run every test suite (server: Vitest + Supertest)
+pnpm test      # server (32) + client (13) suites — 45 tests
 pnpm --filter @tts/server generate:fixtures   # regenerate mock MP3s (lamejs, no ffmpeg)
 ```
 
@@ -92,7 +98,7 @@ pnpm --filter @tts/server generate:fixtures   # regenerate mock MP3s (lamejs, no
 | Max text length | **4 000 characters** | Cheap, matches many TTS quotas |
 | Default language | **`en-US`** | Widest voice coverage |
 | Audio format | **MP3 (`audio/mpeg`)** | Plays everywhere, small files |
-| Audio transport | **Binary stream** (`{ audioUrl }` optional later) | Phase 3 streams bytes; files can come in Phase 4+ |
+| Audio transport | **Binary stream** (`{ audioUrl }` optional later) | Phase 3 streams bytes; files can come later |
 | TTS provider (Level 1) | **Mock** (fixture MP3s); real vendor in Phase 5 | No billing during early phases; CI needs no secrets |
 | Rate limit | **10 TTS requests / IP / 15 min** (enforced Phase 6) | Abuse protection |
 | Error envelope | **`{ "success": false, "error": string }`** | One shape the client can always parse |
@@ -146,7 +152,6 @@ voice must exist in the catalog · voice must speak the requested language ·
 | 413 | body exceeds 64 KB | `{"success":false,"error":"Request body too large"}` |
 | 429 | rate limit exceeded (Phase 6, + `Retry-After`) | `{"success":false,"error":"Too many requests"}` |
 | 503 | TTS provider unavailable/timeout | `{"success":false,"error":"TTS provider unavailable"}` |
-| 501 | *(Phase 2 only — retired)* valid request before synthesis existed | `{"success":false,"error":"TTS not implemented"}` |
 
 The mock provider streams a per-voice fixture MP3 (~1 s pitched dual-beep —
 speakers are audibly distinct). Phase 5 swaps `ttsService`'s provider; the
@@ -173,8 +178,9 @@ Copy the root [`.env.example`](./.env.example) to `apps/server/.env` for local d
 pnpm test          # everything (CI runs this with TTS_PROVIDER=mock)
 ```
 
-Server suite (`apps/server/tests/`, Vitest + Supertest). **Status: Phase 0–3
-verified 2026-09-10 — 32/32 automated green, manual protocols executed.**
+**Status: Phase 0–4 verified 2026-09-10 — 45/45 automated green (32 server + 13 client).**
+
+### Server (`apps/server/tests/`, Vitest + Supertest)
 
 | ID | Phase | Test | Expected | Status |
 | --- | --- | --- | --- | --- |
@@ -184,7 +190,6 @@ verified 2026-09-10 — 32/32 automated green, manual protocols executed.**
 | — | 0 | Contract guard (`tests/contract.test.js`) | Frozen limits + envelopes asserted as code | ✅ |
 | 1.1 | 1 | `GET /api/health` (Supertest + live curl) | **200**, `{ "status": "ok" }`, JSON | ✅ |
 | 1.2 | 1 | `GET /api/does-not-exist` | **404**, contract JSON — never HTML | ✅ |
-| — | 1 | `DELETE /api/health` (unsupported method) | **404** JSON | ✅ |
 | 1.3 | 1 | Manual: health while server running | `200` `application/json` in ~1 ms | ✅ |
 | 1.4 | 1 | Manual: server stopped, hit health | Connection refused — client error path confirmed | ✅ |
 | 2.1 | 2 | `POST /api/tts` `{}` | **400**, "Text is required" | ✅ |
@@ -195,7 +200,6 @@ verified 2026-09-10 — 32/32 automated green, manual protocols executed.**
 | 2.6 | 2→3 | valid body | Phase 2: **501** · Phase 3+: **200** `audio/mpeg` | ✅ |
 | 2.7 | 2 | `Content-Type: text/plain` | **415** contract JSON | ✅ |
 | 2.8 | 2 | Manual: repeat 2.1–2.7 live (curl) | Identical status codes | ✅ |
-| — | 2 | Malformed JSON / >64 KB body / array body / GET method | **400** / **413** / **400** / **404**, all JSON | ✅ |
 | 3.1 | 3 | `GET /api/voices` | **200**, ≥2 voices with id/name/language/gender | ✅ |
 | 3.2 | 3 | `POST /api/tts` valid | **200**, `content-type: audio/mpeg`, body > 0 bytes | ✅ |
 | 3.3 | 3 | Unknown voice id | **400**, "Unknown voice" | ✅ |
@@ -203,35 +207,60 @@ verified 2026-09-10 — 32/32 automated green, manual protocols executed.**
 | 3.5 | 3 | Manual: save response as `.mp3` | Valid MPEG frame chain (40 frames, ~1 s), playable | ✅ |
 | 3.6 | 3 | Regression: Phase 2 suite | 400s intact; valid input now **200** (was 501) | ✅ |
 
+### Client (`apps/client/src/`, Vitest + React Testing Library)
+
+| ID | Phase | Test | Expected | Status |
+| --- | --- | --- | --- | --- |
+| 4.1 | 4 | Empty textarea + Generate | Button **disabled**, zero network calls | ✅ |
+| 4.2 | 4 | Type "Hello world" | CHARS 11/4000 · WORDS 2, live | ✅ |
+| 4.3 | 4 | Paste 4 001 chars | Clamped to 4 000 + "MAX REACHED" warning | ✅ |
+| 4.4 | 4 | Change language | Voice list filters; stale voice auto-resets | ✅ |
+| 4.5 | 4 | Voices API failure | Alert visible + Generate disabled + retry button | ✅ |
+| 4.6 | 4 | TTS 200 blob | `<audio>` appears with `blob:` src | ✅ |
+| 4.7 | 4 | TTS 400 | Server's JSON error text shown in alert | ✅ |
+| 4.8 | 4 | Network offline | "Network failure" message | ✅ |
+| 4.9 | 4 | Download link | `download="speech.mp3"` + `blob:` href | ✅ |
+| 4.10 | 4 | Manual: happy path vs live server | ✅ verified via proxy round-trip (catalog → 200 MPEG) | ✅ |
+| 4.11 | 4 | Manual: 375 px width | Mobile-first single-column; no horizontal overflow | ✅ |
+| 4.12 | 4 | Manual: keyboard order | DOM order: textarea → language → voice → generate → player | ✅ |
+
+### UI behavior decisions (documented per the plan)
+
+- **4 001st character is blocked *and* warned** (clamped in `TextInput`, "MAX REACHED" hint).
+- **Changing text clears the previous audio** (plan: "clear is simpler"); the old
+  object URL is revoked — no blob memory leaks, ever.
+- **Empty text never reaches the network** — Generate is disabled until text +
+  voice exist (4.1), and the server re-validates everything client-side checks.
+- **Error mapping** (`ErrorMessage`): 400s show the server's human message; 429
+  explains the 10/15-min limit; 503 suggests retrying; a dead connection says
+  "Network failure".
+
 CI (`.github/workflows/ci.yml`) installs, builds, and tests on every push with the
 mock provider — no secrets ever needed.
 
-## UI — current state (design-system foundation)
+## Design system (vaporwave / outrun)
 
-The client is the **vaporwave design system, implemented** — not yet the Phase 4
-product screen. What exists today:
+The full design language lives in **one file** — `apps/client/src/styles/globals.css`:
 
-- **Tokens** in `apps/client/src/styles/globals.css` (`@theme`): palette
-  (`void #090014`, `panel #1a103c`, `magenta #FF00FF`, `cyan #00FFFF`,
-  `sunset #FF9900`, `line #2D1B4E`), fonts (Orbitron for headings, Share Tech Mono
-  for everything else), neon shadow/glow tokens, and motion (blink, pulse).
-- **Atmosphere** components: fixed CRT overlay (scanlines + chromatic aberration +
-  vignette) and the backdrop (perspective grid floor, blurred gradient sun, horizon glow).
-- **Primitives**: `Button` (4 variants incl. the skewed kinetic primary),
-  `Card`, `Badge`, `StatusDot`, `TerminalWindow` (title bar + control dots + status bar).
-- **Live wiring**: `useApiHealth` polls `GET /api/health` (status, latency, checks in
-  the `SYS://HEALTH` terminal); `useVoices` fetches the Phase 3 catalog (live voice
-  count in `SYS://SPEC`); endpoint cards reflect what's actually deployed.
+- **`@theme` tokens**: palette (`void #090014`, `panel #1a103c`, `magenta #FF00FF`,
+  `cyan #00FFFF`, `sunset #FF9900`, `line #2D1B4E`), fonts (Orbitron headings,
+  Share Tech Mono body/UI — self-hosted via Fontsource), neon glow shadows, motion.
+- **Atmosphere components**: CRT overlay (scanlines + chromatic aberration +
+  vignette, `aria-hidden`, pointer-transparent) and the backdrop (perspective grid
+  floor, blurred gradient sun, horizon glow).
+- **Primitives**: `Button` (4 variants, kinetic skew), `Card`, `Badge`, `StatusDot`,
+  `TerminalWindow` (window chrome + control dots).
+- **Synth bay** (`components/tts/`): the Phase 4 product UI, built entirely from
+  those primitives — live counts, terminal selectors, in-flight "SYNTHESIZING…"
+  state, blob-fed `<audio>` + neon download button.
 
-Accessibility & responsiveness are built in: `aria-live` status region, decorative
-layers `aria-hidden` and pointer-transparent, visible cyan focus rings, 44px+ touch
-targets, `prefers-reduced-motion` support, and single-column mobile layouts that keep
-every neon effect.
+Accessibility is part of the system: labeled inputs (4.12/9.5), `role="alert"`
+errors, `aria-live` counters/status, visible cyan focus rings, 44px+ touch
+targets, `prefers-reduced-motion` support.
 
 ## Roadmap
 
-See [`TTS-Build-Plan.md`](./TTS-Build-Plan.md) for the full phase-by-phase plan,
-test matrix, and the 14-day mapping. Next up — **Phase 4**: the React product
-screen (text input with live counts, language/voice selectors from
-`/api/voices`, generate → blob → `<audio>`, download, error mapping) on top of
-the design system.
+See [`TTS-Build-Plan.md`](./TTS-Build-Plan.md) for the full phase-by-phase plan.
+**Level 1 is demo-complete (Phases 0–4).** Next up — **Phase 5**: a real TTS
+vendor behind the same `synthesize()` interface (`TTS_PROVIDER=mock` stays for
+CI), then **Phase 6** hardening (rate limit, CORS allow-list, structured logs).
