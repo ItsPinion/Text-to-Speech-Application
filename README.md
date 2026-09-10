@@ -43,9 +43,10 @@ The build plan's `client/` + `server/` map to `apps/*` (Turborepo convention):
 │       │   ├── server.js            # entrypoint — listens (PORT/HOST from env)
 │       │   ├── app.js               # app factory — helmet, CORS, /api, JSON 404, error handler
 │       │   ├── config/env.js        # centralised env access with safe defaults
-│       │   ├── routes/              # /api router (health today; tts/voices in Phases 2–3)
-│       │   └── middleware/errors.js # contract-shaped JSON 404 + 500
-│       └── tests/health.test.js     # Phase 1 suite (tests 1.1, 1.2)
+│       │   ├── routes/              # /api router — health, tts (voices @ Phase 3)
+│       │   ├── validation/tts.js    # pure Phase 2 validator — 400s live here
+│       │   └── middleware/errors.js # contract-shaped JSON 404/400/413 + 500
+│       └── tests/                   # Phase 1–2 suites (Vitest + Supertest)
 ├── packages/
 │   └── shared/                 # @tts/shared — frozen contract, consumed by server & client
 ├── .env.example                # every env var, with TTS_API_KEY= blank
@@ -111,17 +112,23 @@ curl -s http://localhost:3000/api/health
 { "voices": [ { "id": "en-US-female-1", "name": "Aria", "language": "en-US", "gender": "female" } ] }
 ```
 
-### `POST /api/tts` — Phase 2 (validation → 501), Phase 3 (audio)
+### `POST /api/tts` — live (Phase 2: validation → 501); audio arrives Phase 3
 
 ```json
-// request
+// request — language is optional (defaults to "en-US")
 { "text": "Hello", "language": "en-US", "voice": "en-US-female-1" }
 ```
+
+Validation rules (enforced by `src/validation/tts.js`, driven by `@tts/shared`):
+text required, trimmed, ≤ 4 000 chars · language must be in the allow-list ·
+voice required · `Content-Type` must be `application/json`.
 
 | Status | When | Body |
 | --- | --- | --- |
 | 200 | valid request (Phase 3+) | `audio/mpeg` bytes (binary stream) |
-| 400 | empty/oversized text, unknown language, missing/unknown voice | `{"success":false,"error":"…"}` |
+| 400 | empty/oversized text, unknown language, missing/unknown voice, malformed JSON | `{"success":false,"error":"…"}` |
+| 415 | `Content-Type` is not `application/json` | `{"success":false,"error":"Content-Type must be application/json"}` |
+| 413 | body exceeds 64 KB | `{"success":false,"error":"Request body too large"}` |
 | 429 | rate limit exceeded (Phase 6, + `Retry-After`) | `{"success":false,"error":"Too many requests"}` |
 | 503 | TTS provider unavailable/timeout (Phase 5+) | `{"success":false,"error":"TTS provider unavailable"}` |
 | 501 | valid request during Phase 2 only | `{"success":false,"error":"TTS not implemented"}` |

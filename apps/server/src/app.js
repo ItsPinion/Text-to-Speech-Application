@@ -12,7 +12,8 @@ import apiRouter from './routes/index.js';
  *
  * Phase 1 middleware: helmet (security headers), CORS placeholder for the
  * Vite dev origin, /api router, JSON 404, JSON error handler.
- * Phase 2 will add the JSON body parser + content-type checks with /api/tts.
+ * Phase 2 mounts the JSON body parser + content-type guard on /api/tts only
+ * (see routes/tts.js) — health/voices never parse bodies.
  */
 export function createApp() {
   const app = express();
