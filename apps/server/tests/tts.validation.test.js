@@ -55,14 +55,14 @@ describe('POST /api/tts — Phase 2 validation matrix', () => {
     expect(res.body.error.toLowerCase()).toContain('language');
   });
 
-  it('2.6 valid body → 501 TTS not implemented (not 500)', async () => {
+  it('2.6 valid body → 200 audio/mpeg (Phase 3 superseded the 501, plan 3.6)', async () => {
     const res = await postJson({
       text: 'Hello',
       language: 'en-US',
       voice: 'en-US-female-1',
     });
-    expect(res.status).toBe(501);
-    expect(res.body).toEqual({ success: false, error: 'TTS not implemented' });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('audio/mpeg');
   });
 
   it('2.7 Content-Type text/plain → 415 contract JSON', async () => {
@@ -104,14 +104,17 @@ describe('POST /api/tts — validation hardening (beyond the matrix)', () => {
     expectContractError(res, 400);
   });
 
-  it(`boundary: exactly ${MAX_TEXT_LENGTH} chars is valid → 501`, async () => {
-    const res = await postJson({ text: 'a'.repeat(MAX_TEXT_LENGTH), voice: 'v' });
-    expect(res.status).toBe(501);
+  it(`boundary: exactly ${MAX_TEXT_LENGTH} chars is valid → 200`, async () => {
+    const res = await postJson({
+      text: 'a'.repeat(MAX_TEXT_LENGTH),
+      voice: 'en-US-female-1',
+    });
+    expect(res.status).toBe(200);
   });
 
-  it('language is optional → defaults to en-US, still 501', async () => {
+  it('language is optional → defaults to en-US, still 200', async () => {
     const res = await postJson({ text: 'Hello', voice: 'en-US-female-1' });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
   });
 
   it('GET /api/tts (unsupported method) → 404 JSON', async () => {

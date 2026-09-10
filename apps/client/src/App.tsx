@@ -10,6 +10,7 @@ import { StatusDot } from '@/components/ui/StatusDot'
 import { TerminalWindow } from '@/components/ui/TerminalWindow'
 import { HEALTH_POLL_MS, useApiHealth } from '@/hooks/useApiHealth'
 import type { HealthStatus } from '@/hooks/useApiHealth'
+import { useVoices } from '@/hooks/useVoices'
 
 const ENDPOINTS = [
   {
@@ -27,19 +28,19 @@ const ENDPOINTS = [
     path: '/api/voices',
     returns: '{ "voices": […] }',
     codes: '200',
-    phase: 'PHASE 3',
-    live: false,
-    liveNote: 'PENDING — VOICE CATALOG',
+    phase: 'LIVE — PHASE 3',
+    live: true,
+    liveNote: '▲ CATALOG LIVE — SEE VOICES READOUT',
     description: 'Voice catalog — id, name, language, gender. Drives the future selectors.',
   },
   {
     method: 'POST',
     path: '/api/tts',
-    returns: '501 NOW · audio/mpeg @ P3',
-    codes: '501 · 400 · 415 · 413',
-    phase: 'LIVE — PHASE 2',
+    returns: 'audio/mpeg BYTES',
+    codes: '200 · 400 · 415 · 413',
+    phase: 'LIVE — PHASE 3',
     live: true,
-    liveNote: '▲ VALIDATION LIVE — 501 UNTIL PHASE 3',
+    liveNote: '▲ SYNTHESIS LIVE — MOCK PROVIDER',
     description: 'Text in, MP3 bytes out. The vendor key never leaves the server.',
   },
 ] as const
@@ -79,6 +80,7 @@ function ReadoutRow({ label, value }: { label: string; value: ReactNode }) {
 
 export default function App() {
   const health = useApiHealth()
+  const voices = useVoices()
   const isOnline = health.status === 'online'
 
   return (
@@ -195,6 +197,27 @@ export default function App() {
             footer="FROZEN IN PHASE 0 · SHARED VIA @tts/shared"
           >
             <dl>
+              <ReadoutRow
+                label="VOICES"
+                value={
+                  voices.status === 'ready' ? (
+                    <span className="text-cyan text-glow-cyan">
+                      {voices.voices.length} ONLINE ·{' '}
+                      {new Set(voices.voices.map((v) => v.language)).size} LANGS
+                    </span>
+                  ) : voices.status === 'loading' ? (
+                    'SYNCING…'
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={voices.reload}
+                      className="text-magenta underline decoration-dotted underline-offset-4 hover:text-cyan"
+                    >
+                      CATALOG LOST — RESCAN
+                    </button>
+                  )
+                }
+              />
               <ReadoutRow label="MAX TEXT" value={`${MAX_TEXT_LENGTH.toLocaleString('en-US')} CHARS`} />
               <ReadoutRow label="DEFAULT LANG" value={DEFAULT_LANGUAGE} />
               <ReadoutRow label="AUDIO FORMAT" value={AUDIO_FORMAT} />

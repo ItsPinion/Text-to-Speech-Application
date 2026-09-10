@@ -9,7 +9,8 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "generate:fixtures": "node scripts/generate-fixtures.mjs"
   },
   "dependencies": {
     "@tts/shared": "workspace:*",
@@ -19,6 +20,7 @@
     "helmet": "^8.1.0"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "supertest": "^7.1.0",
     "vitest": "^3.2.0"
   }
