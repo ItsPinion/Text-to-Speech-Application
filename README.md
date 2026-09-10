@@ -60,23 +60,41 @@ text-to-speech-application/
 ## Quickstart
 
 ```bash
-# 1 — configure env (never commit .env)
+# 0 — configure env (never commit .env)
 cp .env.example .env
 
-# 2 — API server → http://localhost:3000
-cd server
-npm install
-npm run dev
+# 1 — one-time: install server + client dependencies
+npm run setup
 
-# 3 — frontend → http://localhost:5173 (new terminal)
-cd client
-npm install
+# 2 — start EVERYTHING (API :3000 + frontend :5173) with one command
 npm run dev
 ```
 
-Open http://localhost:5173 — the terminal boot screen pings `GET /api/health`
-and reports `STATUS: ONLINE` when the API is up. In dev the Vite server proxies
+That's it — `npm run dev` at the repo root boots both processes with
+color-coded, prefixed logs (`[API]` magenta, `[WEB]` cyan) and kills both
+together on Ctrl-C. The API runs under `node --watch`, so backend edits
+hot-reload; the frontend runs Vite with HMR. In dev the Vite server proxies
 `/api` → `http://localhost:3000`, so no CORS setup is needed in the browser.
+
+<details>
+<summary>Prefer running the pieces separately?</summary>
+
+```bash
+# API only → http://localhost:3000
+npm run dev:server        # or: cd server && npm run dev
+
+# frontend only → http://localhost:5173 (needs the API for data)
+npm run dev:client        # or: cd client && npm run dev
+
+# other root commands
+npm run build             # production build of the client (client/dist)
+npm start                 # production API start
+npm test                  # server suite (Jest+Supertest) then client suite (Vitest+RTL)
+```
+</details>
+
+Open http://localhost:5173 — the terminal workspace pings `GET /api/health`
+and shows `UPLINK: ONLINE` in the status bar when the API is reachable.
 
 ## Environment variables
 
