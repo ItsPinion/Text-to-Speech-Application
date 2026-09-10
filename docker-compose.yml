@@ -1,0 +1,130 @@
+# ════════════════════════════════════════════════════════════════════
+#  THE one command — everything, with HOT RELOAD, no local toolchain:
+#
+#      docker compose up
+#
+#    client   → http://localhost:5173   (Vite dev server — edit & reload)
+#    server   → http://localhost:3000   (node --watch — edit & restart)
+#    indextts → internal :7861          (local voice cloning, no keys)
+#
+#  Sources are bind-mounted, so code edits on your machine are picked up
+#  inside the containers instantly. Bun/Node only exist inside Docker.
+#  After pulling code changes, rebuild images (cached, fast):
+#      docker compose up --build
+#
+#  Production-build preview (nginx, port 8080):
+#      docker compose -f docker-compose.prod.yml up --build
+#
+#  First boot of `indextts` downloads ~2-4 GB of model weights into the
+#  `indextts-models` volume — watch: docker compose logs -f indextts
+# ════════════════════════════════════════════════════════════════════
+services:
+  indextts:
+    build: ./sidecar
+    container_name: tts-indextts
+    # Pin cwd explicitly — never trust the image's WORKDIR (survives stale
+    # images/caches from earlier builds).
+    working_dir: /opt/index-tts
+    ports:
+      - "7861:7861"
+    environment:
+      INDEX_TTS_MODEL_DIR: /models/checkpoints
+      INDEX_TTS_REFS_DIR: /models/refs
+      HF_HOME: /models/hf
+    volumes:
+      - indextts-models:/models
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;urllib.request.urlopen('http://127.0.0.1:7861/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 60 # weight download can take a while
+      start_period: 30s
+    # ── NVIDIA GPU (optional, much faster) ──────────────────────────
+    # Requires NVIDIA Container Toolkit; uncomment below:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: tts-server
+    working_dir: /app
+    command: ["node", "--watch", "apps/server/src/server.js"]
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      # node:sqlite is built into Node 22 but still prints its
+      # "experimental" notice on first use — silence exactly that one.
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
+      TTS_PROVIDER: indextts
+      INDEX_TTS_API_URL: http://indextts:7861
+      # Local default — set a real secret for anything exposed!
+      JWT_SECRET: ${JWT_SECRET:-change-me-before-any-real-deployment}
+      CLIENT_ORIGIN: http://localhost:5173
+      DB_PATH: /data/tts.sqlite
+      UPLOADS_DIR: /data/uploads
+    volumes:
+      - ./apps/server:/app/apps/server
+      - ./packages/shared:/app/packages/shared
+      - server-data:/data
+    depends_on:
+      - indextts
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
+      target: deps
+    container_name: tts-client
+    working_dir: /app
+    # List form + literal block: exactly one shell parses exactly this script
+    # (nested quotes in a scalar string got mangled by a shell layer once).
+    # vite.config.ts already binds 0.0.0.0:5173 and proxies /api.
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -d /app/apps/client ]; then
+          echo "FATAL: /app/apps/client missing inside the container; /app contains:"
+          ls -la /app
+          exit 1
+        fi
+        if [ ! -f /app/node_modules/vite/bin/vite.js ]; then
+          echo "FATAL: vite missing in /app/node_modules — image predates bunfig.toml (hoisted linker). Rebuild: docker compose build client"
+          ls -la /app/node_modules 2>/dev/null | head
+          exit 1
+        fi
+        cd /app/apps/client
+        exec node /app/node_modules/vite/bin/vite.js
+    ports:
+      - "5173:5173"
+    environment:
+      # Inside the compose network the API is "server", not localhost.
+      API_PROXY_TARGET: http://server:3000
+      # File watching across bind mounts (macOS/Windows) needs polling.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./apps/client:/app/apps/client
+      - ./packages/shared:/app/packages/shared
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  indextts-models:
+  server-data:

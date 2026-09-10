@@ -1,0 +1,5 @@
+# Classic npm-style layout: real package dirs hoisted to the root
+# node_modules. Critical for Docker dev (bind mounts cover apps/*, so
+# per-workspace isolated node_modules would be shadowed by the host).
+[install]
+linker = "hoisted"

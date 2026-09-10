@@ -1,0 +1,29 @@
+{
+  "name": "@tts/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Express API for the TTS platform — Phase 1: skeleton & health",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:fixtures": "node scripts/generate-fixtures.mjs"
+  },
+  "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@tts/shared": "workspace:*",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0",
+    "vitest": "^3.2.0"
+  }
+}
