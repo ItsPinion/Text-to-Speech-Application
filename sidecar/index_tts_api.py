@@ -199,6 +199,17 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def _mem_available_gib():
+    """GiB of RAM the container can actually use (None where /proc is absent)."""
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) / (1024 * 1024)
+    except OSError:
+        pass
+    return None
+
+
 def warmup() -> None:
     """Pre-load reference voices + model in a background thread so the first
     real request pays only inference — not a multi-GB cold model load that
@@ -206,6 +217,17 @@ def warmup() -> None:
     mysterious "nothing generates". Load errors also show up HERE, in the
     logs, before anyone clicks anything."""
     try:
+        available = _mem_available_gib()
+        if available is not None:
+            log(f"warm-up: {available:.1f} GiB RAM available")
+            if available < 10:
+                log(
+                    "warm-up: ⚠ LOW MEMORY — the fp32 model needs ~8-12 GiB peak on CPU. "
+                    "If this container dies with exit 137 (OOM-killed), give Docker more "
+                    "RAM: Docker Desktop → Settings → Resources → Memory, or on WSL2 put "
+                    "[wsl2] memory=12GB / swap=16GB in %USERPROFILE%\\.wslconfig and run "
+                    "`wsl --shutdown`, then start Docker again."
+                )
         prompt = resolve_reference("voice_01")
         log(f"warm-up: reference voice {prompt.name} ready")
         started = time.time()
@@ -215,7 +237,19 @@ def warmup() -> None:
         log(f"warm-up failed (will retry on first request): {error}")
 
 
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that doesn't scream when a health-check client
+    hangs up mid-response (BrokenPipeError under memory pressure)."""
+
+    def handle_error(self, request, client_address):
+        import sys
+
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 if __name__ == "__main__":
     log(f"sidecar listening on http://{HOST}:{PORT} (model dir: {MODEL_DIR})")
     threading.Thread(target=warmup, name="model-warmup", daemon=True).start()
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    QuietThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

@@ -213,6 +213,14 @@ interface — the route, contract, and UI do not change:
 docker compose up indextts   # first boot downloads ~2-4 GB of model weights
 ```
 
+> **Memory:** on CPU the sidecar loads the model in fp32 — budget **~8–12 GiB
+> of RAM for the `indextts` container** (peak during load). If it exits with
+> code 137 it was OOM-killed: raise Docker's memory — Docker Desktop →
+> Settings → Resources → Memory, or on WSL2 set `[wsl2] memory=12GB` and
+> `swap=16GB` in `%USERPROFILE%\.wslconfig`, run `wsl --shutdown`, restart
+> Docker. The sidecar logs its available RAM at warm-up (`warm-up: N GiB RAM
+> available`).
+
 Then in `apps/server/.env`:
 
 ```bash
