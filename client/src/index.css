@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global base ─────────────────────────────────────────────
+   Body copy is terminal mono by default; headings opt into
+   Orbitron via font-heading. Chrome text on the void. */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-void font-mono text-chrome antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    @apply bg-neon-magenta text-black;
+  }
+}
+
+/* ── Signature background layers (see design system §2) ──────
+   CRT scanlines + subtle RGB chromatic aberration, fixed over
+   everything; applied via <Scanlines /> so it can be reused. */
+@layer utilities {
+  .bg-scanlines {
+    background: linear-gradient(rgba(18, 16, 20, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+    background-size: 100% 4px;
+  }
+  .bg-chromatic {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 0, 0, 0.06),
+      rgba(0, 255, 0, 0.02),
+      rgba(0, 0, 255, 0.06)
+    );
+  }
+  /* The infinite receding grid — perspective-transformed wireframe floor */
+  .bg-perspective-grid {
+    background-image: linear-gradient(transparent 95%, rgba(255, 0, 255, 0.4) 95%),
+      linear-gradient(90deg, transparent 95%, rgba(255, 0, 255, 0.4) 95%);
+    background-size: 40px 40px;
+  }
+  .mask-fade-up {
+    -webkit-mask-image: linear-gradient(to top, black 25%, transparent 92%);
+    mask-image: linear-gradient(to top, black 25%, transparent 92%);
+  }
+}
