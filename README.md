@@ -79,7 +79,8 @@ docker compose up
 | internal :7861 | **IndexTTS** voice engine (first boot downloads ~2–4 GB of weights — `docker compose logs -f indextts`) |
 
 Sources are bind-mounted, so Bun/Node/Everything runs inside Docker while you
-edit on your machine. Production-build preview (nginx on :8080):
+edit on your machine. After pulling code changes, rebuild the images (cached,
+fast): `docker compose up --build`. Production-build preview (nginx on :8080):
 `docker compose -f docker-compose.prod.yml up --build`.
 
 ### Local development with bun (optional)
