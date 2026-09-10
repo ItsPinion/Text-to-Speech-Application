@@ -6,8 +6,8 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "generate:fixtures": "node scripts/generate-fixtures.mjs"
