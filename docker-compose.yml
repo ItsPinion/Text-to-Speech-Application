@@ -101,7 +101,13 @@ services:
           ls -la /app
           exit 1
         fi
-        exec bun run dev
+        if [ ! -f /app/node_modules/vite/bin/vite.js ]; then
+          echo "FATAL: vite missing in /app/node_modules — image predates bunfig.toml (hoisted linker). Rebuild: docker compose build client"
+          ls -la /app/node_modules 2>/dev/null | head
+          exit 1
+        fi
+        cd /app/apps/client
+        exec node /app/node_modules/vite/bin/vite.js
     ports:
       - "5173:5173"
     environment:
