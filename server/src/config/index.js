@@ -29,4 +29,7 @@ module.exports = {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+
+  /** TTS provider name — "mock" (default, keyless) until Phase 5. */
+  ttsProvider: (process.env.TTS_PROVIDER || 'mock').toLowerCase(),
 };
