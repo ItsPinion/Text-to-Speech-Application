@@ -38,3 +38,6 @@ uploads/
 .idea/
 .DS_Store
 Thumbs.db
+
+# ---- turborepo ----
+.turbo/

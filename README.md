@@ -1,6 +1,7 @@
 # Text-to-Speech Platform 🎙️⚡
 
-Full-stack text-to-speech app: **React (Vite)** frontend + **Node.js / Express** backend.
+Full-stack text-to-speech app: **React (Vite)** frontend + **Node.js / Express** backend,
+managed as a **Turborepo monorepo** (npm workspaces, single root lockfile).
 API keys never leave the server. Built phase-by-phase per [`TTS-Build-Plan.md`](./TTS-Build-Plan.md).
 
 **Aesthetic:** Vaporwave / Outrun terminal — neon magenta & cyan on the void. CRT scanlines included.
@@ -26,13 +27,15 @@ API keys never leave the server. Built phase-by-phase per [`TTS-Build-Plan.md`](
 
 ```
 text-to-speech-application/
-├── client/                 # React (Vite) — vaporwave UI + design tokens
+├── turbo.json              # Turborepo task graph (dev / build / test)
+├── package.json            # npm workspaces: client + server, single lockfile
+├── client/                 # workspace: tts-client — React (Vite) vaporwave UI
 │   └── src/
 │       ├── components/     # Button, TerminalWindow, TextInput, selectors, player, errors
 │       ├── services/       # API client (blob transport for /api/tts)
 │       ├── utils/          # text stats, language labels
 │       └── test/           # Vitest + RTL setup
-├── server/                 # Express API
+├── server/                 # workspace: tts-server — Express API
 │   ├── src/
 │   │   ├── app.js          # Express app (exported for Supertest)
 │   │   ├── server.js       # Entry point — listens on PORT
@@ -45,9 +48,11 @@ text-to-speech-application/
 │   │   ├── services/       # ttsService port + providers/ (mock now, vendor in Phase 5)
 │   │   └── routes/         # /api router: health, voices, tts
 │   ├── fixtures/           # beep.mp3 — mock provider audio
+│   ├── scripts/            # protocol-battery.mjs — live Postman-equivalent checks
 │   └── tests/              # Jest + Supertest (24 tests)
 ├── docs/
-│   └── API.md              # 🔒 FROZEN API contract (source of truth)
+│   ├── API.md              # 🔒 FROZEN API contract (source of truth)
+│   └── TEST-REPORT.md      # Phase 0–3 test campaign evidence
 ├── .env.example            # Environment template — copy to .env
 └── TTS-Build-Plan.md       # The plan this repo is built from
 ```
@@ -63,33 +68,37 @@ text-to-speech-application/
 # 0 — configure env (never commit .env)
 cp .env.example .env
 
-# 1 — one-time: install server + client dependencies
-npm run setup
+# 1 — install EVERYTHING (npm workspaces: one root node_modules + lockfile)
+npm install
 
-# 2 — start EVERYTHING (API :3000 + frontend :5173) with one command
+# 2 — start EVERYTHING (API :3000 + frontend :5173) via Turborepo
 npm run dev
 ```
 
-That's it — `npm run dev` at the repo root boots both processes with
-color-coded, prefixed logs (`[API]` magenta, `[WEB]` cyan) and kills both
-together on Ctrl-C. The API runs under `node --watch`, so backend edits
-hot-reload; the frontend runs Vite with HMR. In dev the Vite server proxies
+`npm run dev` runs `turbo run dev`: both workspace `dev` tasks in parallel,
+output prefixed per workspace (`tts-server:dev:` / `tts-client:dev:`), and
+Ctrl-C tears down both. The API runs under `node --watch` (backend edits
+hot-reload); the frontend runs Vite with HMR. In dev the Vite server proxies
 `/api` → `http://localhost:3000`, so no CORS setup is needed in the browser.
+Turbo also caches `build`/`test` — unchanged packages replay instantly
+(`>>> FULL TURBO`).
 
 <details>
-<summary>Prefer running the pieces separately?</summary>
+<summary>Per-workspace & production commands</summary>
 
 ```bash
-# API only → http://localhost:3000
-npm run dev:server        # or: cd server && npm run dev
+npm run dev:server        # API only  → http://localhost:3000
+npm run dev:client        # web only  → http://localhost:5173
 
-# frontend only → http://localhost:5173 (needs the API for data)
-npm run dev:client        # or: cd client && npm run dev
+npm run build             # turbo: client production build (client/dist)
+npm start                 # production API start (tts-server)
 
-# other root commands
-npm run build             # production build of the client (client/dist)
-npm start                 # production API start
-npm test                  # server suite (Jest+Supertest) then client suite (Vitest+RTL)
+npm test                  # turbo: server suite + client suite (parallel)
+npm run test:server       # Jest + Supertest only
+npm run test:client       # Vitest + RTL only
+
+# live protocol battery (Postman-equivalent; API must be running)
+node server/scripts/protocol-battery.mjs
 ```
 </details>
 
@@ -146,11 +155,12 @@ all shapes frozen in [`docs/API.md`](./docs/API.md).
 ## Testing
 
 ```bash
-# server — Jest + Supertest (24 tests: phases 1–3)
-cd server && npm test
+# both suites, parallel, turbo-orchestrated (33 tests total)
+npm test
 
-# client — Vitest + React Testing Library (9 tests: plan cases 4.1–4.9)
-cd client && npm test
+# or per workspace
+npm run test:server   # Jest + Supertest (24 tests: phases 1–3)
+npm run test:client   # Vitest + React Testing Library (9 tests: plan cases 4.1–4.9)
 ```
 
 Covered per the plan's test matrices:
