@@ -33,6 +33,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -198,6 +199,23 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def warmup() -> None:
+    """Pre-load reference voices + model in a background thread so the first
+    real request pays only inference — not a multi-GB cold model load that
+    used to blow the server's request timeout and surface to the UI as a
+    mysterious "nothing generates". Load errors also show up HERE, in the
+    logs, before anyone clicks anything."""
+    try:
+        prompt = resolve_reference("voice_01")
+        log(f"warm-up: reference voice {prompt.name} ready")
+        started = time.time()
+        load_model()
+        log(f"warm-up: model ready in {time.time() - started:.0f}s — ready to synthesize")
+    except Exception as error:  # noqa: BLE001 — first real request will retry the load
+        log(f"warm-up failed (will retry on first request): {error}")
+
+
 if __name__ == "__main__":
     log(f"sidecar listening on http://{HOST}:{PORT} (model dir: {MODEL_DIR})")
+    threading.Thread(target=warmup, name="model-warmup", daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

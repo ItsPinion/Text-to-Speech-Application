@@ -15,7 +15,7 @@ export function describeTtsError(error: { status: number | null; message: string
     return `Too many requests — the API allows ${RATE_LIMIT.max} per ${RATE_LIMIT.windowMs / 60_000} minutes. Wait a moment and retry.`
   }
   if (error.status === 503) {
-    return 'The speech service is temporarily unavailable. Try again shortly.'
+    return 'The local speech engine is unavailable or still loading — on first boot it loads a multi-GB model (slow on CPU). Check `docker compose logs -f indextts`, wait for "model ready", then retry.'
   }
   return error.message
 }

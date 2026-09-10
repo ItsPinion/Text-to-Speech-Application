@@ -72,6 +72,10 @@ services:
       NODE_OPTIONS: --disable-warning=ExperimentalWarning
       TTS_PROVIDER: indextts
       INDEX_TTS_API_URL: http://indextts:7861
+      # Cold CPU first load = multi-GB model into RAM + first inference;
+      # 2 min aborts it mid-load. 10 min gives even slow machines headroom
+      # (the sidecar now also warms up at boot, so this is rarely hit).
+      INDEX_TTS_TIMEOUT_MS: "600000"
       # Local default — set a real secret for anything exposed!
       JWT_SECRET: ${JWT_SECRET:-change-me-before-any-real-deployment}
       CLIENT_ORIGIN: http://localhost:5173
