@@ -1,0 +1,21 @@
+# dependencies & build output
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+
+# environment (secrets never committed — SR-01)
+.env
+.env.*
+!.env.example
+
+# local runtime data (libSQL file, temp uploads)
+data/
+
+# generated audio
+*.mp3
+
+# misc
+*.log
+.DS_Store
