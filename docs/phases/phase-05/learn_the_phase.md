@@ -1,6 +1,6 @@
 # Phase 05 — Language & Voice System
 
-**Status:** 🔨 implementation pending (design & learning doc complete)
+**Status:** ✅ implemented & verified (as-built notes below)
 **Builds on:** Phase 4 · **Unlocks:** Phase 6 (the API must serve the catalog this UI consumes)
 
 ## What this phase is
@@ -122,6 +122,42 @@ Phase 6 handoff: GET /api/voices implemented against the same @tts/types shape
 - Phase 16: user preferences (default language/voice, recent voices) plug into the *reset
   semantics* defined here — the hook already consults a "default provider" function.
 - Phase 19: `useVoices` is unit-tested with a mocked service (TTL, retry, invalidation paths).
+
+## As-built notes
+
+- Delivered on the Arena session branch (`arena/01a094ee-native-text-to-speech`), one session
+  with Phases 2–4.
+- **`hooks/useVoices.ts` is the sole catalog owner**, exactly per the doc's state machine:
+  module-level cache (5-min TTL) → re-mounts inside the TTL render ready on the FIRST render
+  with zero network calls; expired cache renders immediately flagged `stale: true` and
+  revalidates in the background (stale-while-revalidate); failure → ONE automatic retry after
+  1 s → hard-error state with `retry()`; a refresh failure with data on screen keeps serving
+  it, flagged stale — the "serve stale on refresh failure" rule. `refresh()` is exposed for
+  the explicit UI button and the future INVALID_VOICE signal (Phase 10).
+- **Defaults flow through exported helpers** (`selectDefault`, `defaultVoiceFor`) — Phase 16
+  preferences swap ONE function; callers never change.
+- **The workspace owns only the selection** (`{ language, voice }`) plus the reconciliation
+  effect: on every catalog (re)load, keep the selection only if the voice is still present
+  FOR THE (possibly re-derived) language; otherwise reset to defaults — never ghosts.
+  Language change always resets to that language's first voice (FR-004).
+- **Four-states UI in the selectors card:** loading skeletons (selectors), ready (selects +
+  generate), hard error (red panel, code badge, message, working Retry — no broken empty
+  selects), stale (amber "may be outdated" badge). A catalog meta row shows the
+  source-of-truth note and an always-available refresh icon-button ("Refresh voice catalog").
+- **VoiceSelector shows the gender hint** ("English (US) — Aria · Female"; omitted when
+  unknown); LanguageSelector unchanged (already the Phase 3 contract). Zero hard-coded voices
+  in the app: the old inline fixture-loading effect is gone; everything flows through the
+  hook → `getVoices()` (mock internals until Phase 10, same signature).
+- **Tests — 11 new (41 total green), all checklist behaviors simulated:** hook tests
+  (load-once; TTL cache with zero refetch; fake-timer time-travel past the TTL for the
+  stale/revalidate path; double-failure → error → manual retry recovery; refresh-replaces;
+  refresh-failure-serves-stale; default helpers) and workspace tests (default selection +
+  gender hint; language away-and-back restores DEFAULTS not stale picks; refresh removing the
+  selected voice auto-resets; hard error renders retry and recovers). Service module mocked
+  via `vi.mock("@/services/api")` — the hook is agnostic to mock-vs-real, exactly the
+  Phase 10 swap property.
+- **SSR note (expected behavior):** the catalog fetch is client-side, so the SSR HTML shows
+  the loading skeleton; selects populate after hydration. The four-states render IS the design.
 
 ## What to remember
 

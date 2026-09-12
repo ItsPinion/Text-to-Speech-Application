@@ -18,9 +18,10 @@ optionally runs a free AI enhancement, then generates, plays, and downloads audi
 | Testing | Vitest, React Testing Library, Supertest |
 | CI/CD | GitHub Actions |
 
-**Project status:** *Phases 1–4 implemented & verified* — monorepo shell, native dev workflow,
-full UI foundation on typed mocks, and a real validated editor (live counts, shared-schema
-validation, precise over-limit copy). **Phase 5 (Language & Voice System) is next.** Requirements, architecture, API design, and
+**Project status:** *Phases 1–5 implemented & verified* — monorepo shell, native dev workflow,
+full UI foundation, a validated editor, and the catalog-driven language/voice system
+(cache, retry, refresh, dependent-selector reset semantics). **Phase 6 (Express Backend
+Foundation) is next.** Requirements, architecture, API design, and
 per-phase learning documents are delivered in this repository; implementation follows the phase
 order in [docs/phases/](docs/phases/README.md).
 
