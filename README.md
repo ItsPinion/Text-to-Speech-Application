@@ -18,9 +18,11 @@ optionally runs a free AI enhancement, then generates, plays, and downloads audi
 | Testing | Vitest, React Testing Library, Supertest |
 | CI/CD | GitHub Actions |
 
-**Project status:** *Design complete.* Requirements, architecture, API design, and per-phase
-learning documents are delivered in this repository. Application implementation starts at Phase 1
-and follows the phase order in [docs/phases/](docs/phases/README.md).
+**Project status:** *Phases 1–3 implemented & verified* — monorepo shell, native dev workflow
+(pre-commit + runbook), and the full UI foundation running on typed mock data. **Phase 4 (Text
+Input & Client-Side Validation) is next.** Requirements, architecture, API design, and
+per-phase learning documents are delivered in this repository; implementation follows the phase
+order in [docs/phases/](docs/phases/README.md).
 
 ---
 
@@ -41,7 +43,29 @@ These constraints were fixed before design and override all later choices:
 5. **Turborepo monorepo** with `apps/web`, `apps/api`, and shared `packages/*`.
 6. **No Docker (chosen 2026-09):** PaaS deployment — Vercel (web) + Render (api). There are no local services to containerize: TTS is a remote endpoint, the DB is hosted Turso.
 
-## 2. Key architectural decisions
+---
+
+## 2. Quick start (the whole dev environment)
+
+Three commands — protect them like a contract (Phase 2). Needs [Bun](https://bun.sh) ≥ 1.2.
+
+```text
+1. git clone <repo> && cd native-Text-to-Speech
+2. bun --version            # needs Bun ≥ 1.2 (engines field documents it)
+3. bun install              # frozen by bun.lock
+4. cp .env.example .env     # then: paste your free AI key (optional), nothing else needed
+5. bun run dev              # turbo: web :3000 + api :4000 (dev proxy wired)
+6. verify:
+   - http://localhost:3000            → app shell (UI workspace, mock data until Phase 10)
+   - http://localhost:3000/api/health → { success: true, status: "ok" }
+```
+
+`.env` is git-ignored and never committed — `.env.example` is the documentation. A missing
+`.env` still boots on defaults (edge-tts, :4000, AI off); only *bad* values fail fast via
+`@tts/config`. Optional: `pip install pre-commit && pre-commit install` wires the local gate
+(gitleaks secret scan + eslint on touched files — the local twin of the Phase 22 CI gate).
+
+## 3. Key architectural decisions
 
 | Area | Decision | Why | Main alternative (and why rejected) |
 | --- | --- | --- | --- |
@@ -109,7 +133,7 @@ text-to-speech/
 | 23 | Documentation | [docs/phases/phase-23/learn_the_phase.md](docs/phases/phase-23/learn_the_phase.md) |
 | 24 | Final System Verification | [docs/phases/phase-24/learn_the_phase.md](docs/phases/phase-24/learn_the_phase.md) |
 
-## 5. How to read this documentation
+## 6. How to read this documentation
 
 1. **Start here**, then read [docs/requirements.md](docs/requirements.md) — it is the single
    source of truth for *what* is being built.

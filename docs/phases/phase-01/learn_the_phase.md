@@ -1,6 +1,6 @@
 # Phase 01 — Monorepo & Development Environment
 
-**Status:** 🔨 implementation pending (design & learning doc complete)
+**Status:** ✅ implemented & verified (as-built notes below)
 **Builds on:** Phase 0 · **Unlocks:** Phase 2
 
 ## What this phase is

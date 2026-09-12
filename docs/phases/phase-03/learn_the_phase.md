@@ -1,6 +1,6 @@
 # Phase 03 — Next.js Frontend Foundation
 
-**Status:** 🔨 implementation pending (design & learning doc complete)
+**Status:** ✅ implemented & verified (as-built notes below)
 **Builds on:** Phase 2 · **Unlocks:** Phases 4–5 (features plug into this shell)
 
 ## What this phase is
@@ -123,6 +123,51 @@ apps/web/lib/constants.ts         (re-exports @tts/validation limits)
   signatures were honest.
 - Phase 12/17 add AiEnhancePanel/FileUpload into the same right/left columns (slots reserved).
 - Phase 14 drops `ClerkProvider` into `layout.tsx` — the slot is pre-wired.
+
+## As-built notes
+
+- Delivered together with Phase 2 (one Arena working session on
+  `arena/01a094ee-native-text-to-speech`).
+- **Everything in "What gets created" exists**, laid out per frontend.md §1: `components/`
+  (TextInput, LanguageSelector, VoiceSelector, GenerateButton, AudioPlayer, DownloadButton,
+  ErrorMessage, FileUpload + AiEnhancePanel placeholders, `ui/` primitives = Button, Spinner,
+  Badge, Card, Select), `services/api.ts` + `services/audio.ts`, `lib/constants.ts`
+  (re-exports `@tts/validation` only), `mocks/voices.ts`.
+- **The `'use client'` boundary sits at `components/TtsWorkspace.tsx`** — `app/layout.tsx` and
+  `app/page.tsx` stayed server components (metadata intact; ClerkProvider slot pre-wired with a
+  comment). The workspace root owns textState/voiceState/ttsState per frontend.md §2; counts
+  are derived on render; children are pure props-in/events-out per the contract table.
+- **Mocks are the real contract:** `MOCK_VOICES_RESPONSE` is declared AS `VoicesResponse` and
+  every fixture is `satisfies Voice[]` — the checklist's type-level proof is the compile
+  itself. `services/api.ts` carries the FINAL signatures (`getVoices`, `generateSpeech`,
+  `fetchAudio`); Phase 10 flips data sources, not types. Slightly ahead of spec, recorded
+  honestly: the real `request()` transport (error-envelope parsing → `ApiError`, timeout,
+  abort pass-through) is already implemented and exercisable via `NEXT_PUBLIC_USE_MOCKS=0` —
+  it just isn't the default until the backend routes exist (Phases 5/9).
+- **The mock is honest about failure too:** mock `generateSpeech` throws registry-backed
+  `ApiError`s (`INVALID_TEXT`, `INVALID_VOICE` — same codes and messages the server will send
+  via `ERROR_REGISTRY`), so the ErrorMessage region and code-badge rendering are dress-
+  rehearsed before Phase 7 exists.
+- **The AudioPlayer plays real bytes in the mock phase:** a 11.5 KB MP3 fixture (two-tone
+  chime, mono 64 kbps, generated with lamejs) lives at `public/mock/speech-fixture.mp3`;
+  `mockFetchAudio` serves it so play/pause/seek/volume/download are genuinely exercisable.
+  Custom transport UI on the native `<audio>` element, MP3-only, `aria-valuetext` on the seek
+  slider (mm:ss).
+- **Object-URL hygiene is real:** the workspace tracks the current blob URL in a ref, revokes
+  on replace and on unmount; `services/audio.ts` is final-form (create/revoke/filename
+  helpers, `speech-<audioId>.mp3` per FR-007).
+- **Accessibility baseline in place:** every control labeled, native `<select>`s, ONE
+  `aria-live="assertive"` error region (permanent wrapper so the first announcement fires),
+  polite live counts + sr-only generate-status announcements, visible focus rings throughout.
+- **Verification executed:** page renders the full shell (SSR HTML checked for every
+  component incl. placeholders), no horizontal-scroll layout (single column → `lg:grid-cols`,
+  `min-w-0` guards), lint/typecheck/test/build all green repo-wide, **no `any` in
+  components/services**, `/api/health` still reachable through the dev proxy, fixture served
+  200. Loading states are visible with the mock delays (400/700/250 ms).
+- **Deliberate placeholder states:** FileUpload shows the 10 MB limit and a "Phase 17" badge;
+  AiEnhancePanel renders the five SHARED `AI_OPERATIONS` with labels, disabled, "Phase 12"
+  badge; header holds a disabled "Sign in" button as the Phase 14 slot. The footer states the
+  mock-data status so nobody mistakes the shell for the integrated product.
 
 ## What to remember
 

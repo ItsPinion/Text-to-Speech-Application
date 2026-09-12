@@ -1,6 +1,6 @@
 # Phase 02 — Development Environment & Local Workflow
 
-**Status:** 🔨 implementation pending (design & learning doc complete)
+**Status:** ✅ implemented & verified (as-built notes below)
 **Builds on:** Phase 1 · **Unlocks:** Phase 3 (UI work on a polished dev loop)
 
 ## What this phase is
@@ -164,6 +164,43 @@ phase-01/phase-02 docs: as-built notes updated (C6 change recorded)
 - Phase 20 deploys *this* tree to Vercel/Render — the env matrix in deployment.md §3–4 is the
   production half of this phase's `.env` story.
 - Phase 23's README quick-start is the runbox, promoted.
+
+## As-built notes
+
+- Delivered together with Phase 3 (one Arena working session, one branch — see the branch note
+  below). Everything in "What gets created" exists: `.pre-commit-config.yaml`,
+  `scripts/lint-staged.sh` behind the root `lint:staged` script, the README quick-start (§2),
+  and the `.env` workflow (root file, git-ignored).
+- **Runbook re-executed from a clean tree** (`node_modules`/`.next`/`dist`/`.turbo` removed):
+  `bun install --frozen-lockfile` (513 pkgs, ~2 s) → `cp .env.example .env` → `bun run build`
+  (5/5) → `bun run dev` → web :3000 renders, `:3000/api/health` returns
+  `{ success: true, status: "ok" }` through the proxy. Well under the 2-minute budget.
+- **The api now logs its env at boot** (server.ts): `listening on :4000 (development,
+  tts=edge-tts, ai=off, cors=http://localhost:3000)` — this is the "set `CORS_ORIGIN` in the
+  root `.env` → the api shows it" check made observable.
+- **No-`.env` boot verified:** with `.env` removed the api boots on defaults (edge-tts, :4000,
+  AI off, default CORS) — missing is fine, only bad values fail (fail-fast lives in
+  `@tts/config`).
+- **Port conflict verified:** with :3000 occupied, `next dev -p 3000` fails fast with
+  `listen EADDRINUSE: address already in use :::3000` — readable, no hang.
+- **Pre-commit verified via the real `pre-commit` framework (4.6):** config validates
+  (`pre-commit validate-config`); the `lint-staged` hook runs the owning workspace's eslint on
+  staged files and blocks on unfixable errors (exit 1, tested with a staged
+  `no-unused-vars` violation). **gitleaks caveat:** the gitleaks binary could not be installed
+  in the Arena sandbox (GitHub downloads blocked), so the secret-scan hook was config-validated
+  but not executed here; it is fail-closed (`language: system` — missing binary = loud error,
+  never a silent pass). Developers install it locally via
+  `pip install pre-commit && pre-commit install`.
+- **`NEXT_PUBLIC_USE_MOCKS=1` documented** in `.env.example` (web section) — the Phase 3 mock
+  toggle that Phase 10 removes.
+- **Stale comment fixed:** `next.config.mjs` still spoke of Caddy (pre-C6 Docker era); now
+  describes the dev proxy and the Vercel+Render two-origin production topology per
+  deployment.md.
+- **Branch convention adapted (recorded honestly):** this implementation landed on the Arena
+  session branch `arena/01a094ee-native-text-to-speech` instead of a `phase-02-slug` branch —
+  the Arena harness pins the working branch per session. The `phase-NN-slug`/`Phase NN: …` PR
+  convention stands for normal GitHub flow; commits inside the session follow the
+  imperative-scoped discipline (`env:`/`web:`/`docs:`).
 
 ## What to remember
 
