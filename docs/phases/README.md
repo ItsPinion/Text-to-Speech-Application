@@ -19,7 +19,7 @@ Each phase directory contains `learn_the_phase.md`, which answers:
 | [01](phase-01/learn_the_phase.md) | Monorepo & Development Environment | Turborepo + Bun + TS shell | `bun install` + `bun run build/lint/dev` pass | ✅ |
 | [02](phase-02/learn_the_phase.md) | Development Environment & Local Workflow | Native dev workflow: `.env`, git, scripts, DX polish | `bun run dev` verified end-to-end + workflow documented | ✅ |
 | [03](phase-03/learn_the_phase.md) | Next.js Frontend Foundation | UI shell, components, mock data | All core components render with mocks | ✅ |
-| [04](phase-04/learn_the_phase.md) | Text Input & Client Validation | Editor + counts + validation | Counts live; empty/over-length blocked | 🔨 |
+| [04](phase-04/learn_the_phase.md) | Text Input & Client Validation | Editor + counts + validation | Counts live; empty/over-length blocked | ✅ |
 | [05](phase-05/learn_the_phase.md) | Language & Voice System | Dependent selectors from API | Catalog-driven language→voice UI | 🔨 |
 | [06](phase-06/learn_the_phase.md) | Express Backend Foundation | Layered API skeleton | health/voices/tts routes exist (stub TTS) | 🔨 |
 | [07](phase-07/learn_the_phase.md) | Backend Validation & Error Architecture | Robust input + error contract | All 4xx paths return documented codes | 🔨 |

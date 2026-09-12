@@ -1,6 +1,6 @@
 # Phase 04 — Text Input & Client-Side Validation
 
-**Status:** 🔨 implementation pending (design & learning doc complete)
+**Status:** ✅ implemented & verified (as-built notes below)
 **Builds on:** Phase 3 · **Unlocks:** Phase 5 (generation needs a valid text source)
 
 ## What this phase is
@@ -113,6 +113,44 @@ tests (Phase 19 hooks now):        TextInput counts for ASCII/emoji; over-limit 
   typed, AI-applied, file-uploaded — the editor doesn't care which).
 - Phase 17: file extraction fills `textState` with a `truncated` notice banner (separate
   concern, same sink).
+
+## As-built notes
+
+- **Shared package grew the precise-copy contract:** `packages/validation` now exports
+  `textSchema` (the ONE definition: trim, non-empty, ≤ 5,000 code points), `overLimitMessage()`
+  (singular-aware: "Text is 1 character over the 5,000 limit."), and `validateText()` — a
+  field-level mapper returning `{ ok }` or `{ ok: false, code: INVALID_TEXT|TEXT_TOO_LONG,
+  message }` with registry copy. The old generic "Text is over the … limit" refine is gone;
+  `aiEnhanceRequestSchema` was migrated to `textSchema` too (same rules, one place).
+  11 new package tests (19 total, green) cover the precise copy, emoji math
+  (5,001 emoji = 5,001 characters — naive `.length` would see 10,002), and trim semantics.
+- **Workspace wiring:** `canGenerate = validText && voiceSelected && !loading`; the disabled
+  GenerateButton shows a visible reason ("Enter some text to generate speech." / "Shorten the
+  text to the 5,000-character limit first." / "Pick a voice first.") — never silently dead.
+  Empty-text errors appear on a generate ATTEMPT (and die on edit); over-limit is always live.
+  Counter: amber ≥ 90%, red over, shows "N over" / "N remaining".
+- **Clear is one transition:** text + error + in-flight generation guard (seq bump) + object
+  URL revoke + ttsState reset.
+- **One deliberate deviation from the doc, recorded:** the planned first-BLUR empty-error
+  trigger was dropped. jsdom + vitest 2 + the workspace import graph crash on blur dispatch
+  (vite-node's stack formatter throws `column must be >= 0` from trace-mapping while the event
+  is processed — reproduced with the real component, isolated in a fresh file; the same JSX
+  inline passes). Rather than carry an untestable code path, empty-invalid now surfaces at the
+  generate gate (button reason + aria-live field error), and over-limit — the only harmful
+  case — is always shown live. Validation-on-blur can return in Phase 19 if the toolchain
+  matures; the component contract change is one prop (`onTouched` never shipped).
+- **TextInput tests exist NOW (Phase 19 hooks):** `apps/web/test/textinput.test.tsx` — 8 tests
+  through a stateful Harness (controlled component → a spy `onChange` would freeze `value`):
+  live counts, emoji code points, red/over + amber/near counter classes, error display with
+  aria-invalid/describedby, clear transition, empty-state clear-disabled. Config learned two
+  lessons, encoded in `vitest.config.ts`: `globals: true` (RTL auto-cleanup — without it stale
+  DOM leaks between tests and `getBy*` matches dead elements) and the `@` path alias.
+  Web `test` script + vitest deps added; tests run through the root turbo gate
+  (`bun run test`) so workspace packages are built first (they resolve from `dist/`).
+- **Verification executed:** full gate green (`lint`, `typecheck`, `test` — 30 tests across 4
+  suites, `build`); SSR HTML shows the disabled Generate with reason, "5,000 remaining"
+  counter, aria-live regions; `/api/health` proxy intact. No `setChars`/`setWords` anywhere
+  (grep). Emoji/over-limit/clear behaviors covered by the component tests.
 
 ## What to remember
 
