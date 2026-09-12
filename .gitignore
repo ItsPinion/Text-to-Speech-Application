@@ -19,3 +19,6 @@ data/
 # misc
 *.log
 .DS_Store
+
+# TS incremental build artifacts
+*.tsbuildinfo

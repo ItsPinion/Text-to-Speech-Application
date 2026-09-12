@@ -9,7 +9,12 @@ const config = loadApiEnv();
 const app = createApp();
 
 const server = app.listen(config.port, () => {
-  console.log(`[api] listening on :${config.port} (${config.nodeEnv}, tts=${config.ttsProvider})`);
+  // One line a human can read: what is running, with which env (Phase 2:
+  // proves the root .env reached the api — change CORS_ORIGIN and see it here).
+  console.log(
+    `[api] listening on :${config.port} (${config.nodeEnv}, tts=${config.ttsProvider}, ` +
+      `ai=${config.ai.configured ? config.ai.model : "off"}, cors=${config.corsOrigins.join(",")})`,
+  );
 });
 
 // Graceful shutdown: stop accepting, drain in-flight, exit (Phase 6/20).

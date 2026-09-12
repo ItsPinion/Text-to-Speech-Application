@@ -18,6 +18,7 @@
     "build": "turbo run build",
     "build:api": "turbo run build --filter=api",
     "lint": "turbo run lint",
+    "lint:staged": "bash scripts/lint-staged.sh",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:network": "turbo run test:network"

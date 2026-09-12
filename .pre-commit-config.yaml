@@ -1,0 +1,25 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pre-commit gate (Phase 2) — the local twin of the Phase 22 CI gate.
+# Same two tools, same rules: secret scan + lint on touched files. Pre-commit
+# is instant feedback; CI is the law (Phase 22 runs both on the whole diff).
+#
+# Install once per clone:
+#   pip install pre-commit && pre-commit install
+# Run on all files (optional):
+#   pre-commit run --all-files
+# ─────────────────────────────────────────────────────────────────────────────
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secret scan, staged changes)
+        entry: gitleaks protect --staged -v
+        language: system
+        pass_filenames: false
+
+      - id: lint-staged
+        name: eslint --fix on touched files
+        entry: bun run lint:staged
+        language: system
+        pass_filenames: true
+        types_or: [ts, tsx, javascript, jsx]
