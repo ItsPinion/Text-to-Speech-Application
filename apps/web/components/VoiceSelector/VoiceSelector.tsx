@@ -29,6 +29,10 @@ export function VoiceSelector({
       ? "Pick a language first"
       : "Select voice";
 
+  // "English (US) — Aria · Female" (gender hint omitted when unknown).
+  const genderHint = (gender: Voice["gender"]): string =>
+    gender === "unknown" ? "" : ` · ${gender.charAt(0).toUpperCase()}${gender.slice(1)}`;
+
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-semibold text-slate-900">
@@ -46,7 +50,7 @@ export function VoiceSelector({
           id={id}
           options={voices.map((voice) => ({
             value: voice.id,
-            label: voice.name,
+            label: `${voice.name}${genderHint(voice.gender)}`,
           }))}
           value={value}
           onChange={(event) => onChange(event.target.value)}
