@@ -6,6 +6,7 @@
  * runtimes, zero drift (FR-009, SR-02).
  */
 import { z } from "zod";
+import { ERROR_REGISTRY } from "./errors.js";
 
 export { ERROR_REGISTRY } from "./errors.js";
 export type { ErrorSpec, ErrorCode } from "./errors.js";
@@ -32,17 +33,65 @@ export function countWords(text: string): number {
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
-const textField = z
-  .string({ required_error: "Enter some text." })
+/** Copy for empty/whitespace-only text — same tone everywhere (client + server). */
+const EMPTY_TEXT_MESSAGE = ERROR_REGISTRY.INVALID_TEXT.message;
+
+/**
+ * Precise over-limit copy: an instruction, not a diagnostic (Phase 4) —
+ * "Text is 123 characters over the 5,000 limit." tells the user exactly
+ * how much to cut. Singular-aware.
+ */
+export function overLimitMessage(chars: number): string {
+  const over = chars - MAX_TEXT_CHARS;
+  return `Text is ${over.toLocaleString()} ${over === 1 ? "character" : "characters"} over the ${MAX_TEXT_CHARS.toLocaleString()} limit.`;
+}
+
+/**
+ * The text field contract: trimmed, non-empty, ≤ MAX_TEXT_CHARS CODE POINTS.
+ * `textSchema` is the ONE definition — the client runs it for instant UX,
+ * the server as authority (Phase 7). Never copy these rules elsewhere.
+ */
+export const textSchema = z
+  .string({
+    required_error: EMPTY_TEXT_MESSAGE,
+    invalid_type_error: EMPTY_TEXT_MESSAGE,
+  })
   .trim()
-  .min(1, { message: "Enter some text." })
-  .refine((s) => s.trim().length > 0, { message: "Enter some text." })
-  .refine((s) => countChars(s) <= MAX_TEXT_CHARS, {
-    message: `Text is over the ${MAX_TEXT_CHARS.toLocaleString()} character limit.`,
+  .min(1, EMPTY_TEXT_MESSAGE)
+  .superRefine((value, ctx) => {
+    const chars = countChars(value);
+    if (chars > MAX_TEXT_CHARS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: overLimitMessage(chars) });
+    }
   });
 
+export type TextInput = z.infer<typeof textSchema>;
+
+/**
+ * Field-level validation result for the text editor (Phase 4): the mapped
+ * { code, message } the UI renders. Runs the SAME rules as textSchema —
+ * codes come from the shared registry, so client UX and server contract
+ * cannot drift. Empty is a valid "state" here (the UI decides when an
+ * empty field becomes an error — on submit attempt / after blur).
+ */
+export type TextValidation =
+  | { ok: true }
+  | { ok: false; code: "INVALID_TEXT" | "TEXT_TOO_LONG"; message: string };
+
+export function validateText(value: string): TextValidation {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, code: "INVALID_TEXT", message: EMPTY_TEXT_MESSAGE };
+  }
+  const chars = countChars(trimmed);
+  if (chars > MAX_TEXT_CHARS) {
+    return { ok: false, code: "TEXT_TOO_LONG", message: overLimitMessage(chars) };
+  }
+  return { ok: true };
+}
+
 export const ttsRequestSchema = z.object({
-  text: textField,
+  text: textSchema,
   voice: z.string().trim().min(1, { message: "Pick a voice." }).max(100),
 });
 
@@ -57,7 +106,7 @@ export const AI_OPERATIONS = [
 ] as const;
 
 export const aiEnhanceRequestSchema = z.object({
-  text: textField,
+  text: textSchema,
   operation: z.enum(AI_OPERATIONS),
 });
 
