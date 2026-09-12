@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { LanguageOption, Voice } from "@tts/types";
-import { countChars } from "@/lib/constants";
+import { countChars, validateText } from "@/lib/constants";
 import { ApiError, fetchAudio, generateSpeech, getVoices } from "@/services/api";
 import { createObjectUrl, revokeObjectUrl } from "@/services/audio";
 import { AiEnhancePanel } from "@/components/AiEnhancePanel";
@@ -53,9 +53,16 @@ const INITIAL_TTS_STATE: TtsState = {
 };
 
 export function TtsWorkspace() {
-  // textState (Phase 3 baseline) — counts are DERIVED on every render.
+  // textState (Phase 4): one source of truth (`text`) + touch/error policy.
+  // chars are DERIVED on every render — there is no setChars/setWords
+  // textState (Phase 4): one source of truth (`text`) + error policy — there
+  // is no setChars/setWords anywhere; the only stored extra is the field-
+  // error STATE (the empty error appears on a generate attempt and dies on
+  // edit; over-limit errors are derived and clear themselves when fixed).
   const [text, setText] = useState("");
+  const [textError, setTextError] = useState<string | null>(null);
   const chars = countChars(text);
+  const validation = validateText(text);
 
   const [voiceState, setVoiceState] = useState<VoiceState>({
     languages: [],
@@ -121,14 +128,46 @@ export function TtsWorkspace() {
     }));
   };
 
+  // ── textState policy (Phase 4) ────────────────────────────────────────────
+  // Over-limit is ALWAYS an error (the user must know what to cut); emptiness
+  // becomes an error only after a blur or a generate attempt (no annoyance
+  // tax mid-thought). Editing always clears the stale error.
+  const shownError = validation.ok
+    ? null
+    : validation.code === "TEXT_TOO_LONG"
+      ? validation.message
+      : textError;
+
+  const handleTextChange = (value: string) => {
+    setText(value);
+    setTextError(null); // stale errors die with the input
+  };
+
+  // canGenerate: valid text + voice picked + not already generating.
+  const canGenerate = validation.ok && voiceState.voice !== "" && ttsState.status !== "loading";
+  const generateReason = !validation.ok
+    ? validation.code === "INVALID_TEXT"
+      ? "Enter some text to generate speech."
+      : "Shorten the text to the 5,000-character limit first."
+    : voiceState.voice === ""
+      ? "Pick a voice first."
+      : null;
+
   const handleGenerate = () => {
     if (ttsState.status === "loading") return;
+    // Client-side validation is the courtesy gate (SR-02) — no network call
+    // on invalid input. The server re-validates with the same schema (Phase 7).
+    if (!validation.ok) {
+      setTextError(validation.message);
+      return;
+    }
+    const voice = voiceState.voice;
     const seq = (generateSeqRef.current += 1);
     setTtsState({ ...INITIAL_TTS_STATE, status: "loading" });
 
     void (async () => {
       try {
-        const response = await generateSpeech({ text, voice: voiceState.voice });
+        const response = await generateSpeech({ text, voice });
         if (generateSeqRef.current !== seq) return; // cancelled meanwhile
         const blob = await fetchAudio(response.audioId);
         if (generateSeqRef.current !== seq) return;
@@ -163,6 +202,18 @@ export function TtsWorkspace() {
     setTtsState(INITIAL_TTS_STATE);
   };
 
+  // Clear is ONE state transition, not three coincidences (Phase 4): text,
+  // error/touch, and any previously generated audio reset together — cleared
+  // text orphans the old audio by definition.
+  const handleClear = () => {
+    generateSeqRef.current += 1; // an in-flight generation belongs to dead text
+    setText("");
+    setTextError(null);
+    revokeObjectUrl(blobUrlRef.current);
+    blobUrlRef.current = null;
+    setTtsState(INITIAL_TTS_STATE);
+  };
+
   const handleDismissError = () => {
     setTtsState((state) => ({
       ...state,
@@ -178,7 +229,13 @@ export function TtsWorkspace() {
       {/* left column: input + v2 slots + live error region */}
       <div className="flex min-w-0 flex-col gap-6">
         <Card>
-          <TextInput value={text} onChange={setText} onClear={() => setText("")} />
+          <TextInput
+            value={text}
+            onChange={handleTextChange}
+            onClear={handleClear}
+            error={shownError}
+            disabled={ttsState.status === "loading"}
+          />
         </Card>
 
         <FileUpload />
@@ -208,6 +265,8 @@ export function TtsWorkspace() {
               status={ttsState.status}
               onGenerate={handleGenerate}
               onCancel={handleCancel}
+              disabled={!canGenerate}
+              reason={generateReason}
             />
             <p aria-live="polite" className="sr-only">
               {ttsState.status === "loading"

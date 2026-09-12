@@ -10,6 +10,8 @@ export {
   MAX_UPLOAD_BYTES,
   countChars,
   countWords,
+  validateText,
+  overLimitMessage,
   ERROR_REGISTRY,
   AI_OPERATIONS,
 } from "@tts/validation";
